@@ -1,0 +1,50 @@
+# Mad-Assembler http://mads.atari8.info
+https://atariage.com/forums/topic/179559-mads-knowledge-base/#comments
+
+https://astroforgit.github.io/drwaldoc/
+
+MADS is a multi-pass crossassembler designed for 6502 and 65816 processors. Binaries are generated mainly for Atari 8-bit systems (supported are AtariDosII and SpartaDOS X formats).
+
+MADS allows using macros and procedures (ability to use program stack), division of the memory between many virtual-banks, multi-dimensional names of labels (similar to C++ and Delphi languages), local-global-temporary labels.
+
+Max. amount of labels and macros is limited to PC's memory size. Single listing's line can be 65536 bytes long and any label can be such long as well.
+
+# Free Pascal Compiler http://www.freepascal.org/
+# Compile: fpc -Mdelphi -vh -O3 mads.pas
+
+
+## Projects in Mad-Assembler
+
+* [Infocom Z-Machine interpreter](https://github.com/jindroush/atari-inform-interpreter)
+* [TurboBasic XL v1.5 disassembly](https://github.com/dmsc/turbo-dis)
+* [BBC Basic](https://github.com/ivop/bbc-basic)
+* [Atari BBC Basic](https://github.com/ivop/atari-bbc-basic)
+* [BW-DOS](https://github.com/dmsc/bwdos-mads)
+* [APX logo](https://github.com/dmsc/apx-logo)
+* [Last Squadron](https://github.com/shanti77atari/lsquadron)
+* [Commando](https://github.com/shanti77atari/commando)
+* [Bosconian 5200](https://github.com/shanti77atari/bosconian5200)
+* [Bosconian 128](https://github.com/shanti77atari/bosconian128)
+* [Bosconian 64 PAL](https://github.com/shanti77atari/bosconian64pal)
+* [Gacek VBXE](https://github.com/shanti77atari/bosconian64pal)
+* [Gacek](https://github.com/shanti77atari/gacek)
+* [Higway Encounter](https://github.com/shanti77atari/highway)
+* [Nibbly](https://github.com/tebe6502/Nibbly)
+* [Pang](https://github.com/tebe6502/Pang)
+* [Getris](https://github.com/tebe6502/getris)
+* [A-Maze](https://github.com/KaroLaunonen/a-maze)
+* [5dots](https://gitlab.com/bocianu/5dots)
+* [Raiders of the Lost Ark](https://forums.atariage.com/topic/260558-raiders-of-the-lost-ark/)
+* [Pad](https://forums.atariage.com/topic/191864-pad-15-beta/?do=findComment&comment=4011355)
+* [LK Avalon sources](https://github.com/NowinskiK/lkavalon-atari)
+* [Intel 8080 Emulator](https://github.com/ivop/atari8080)
+* [EdVenture](https://github.com/EdSalisbury/edventure)
+* [VUPlayer-LZSS](https://github.com/VinsCool/VUPlayer-LZSS)
+* [DUMB-PONG](https://github.com/VinsCool/DUMB-PONG)
+* [Rainbox](https://github.com/fredlcore/1K-RainBox)
+* [ATASCOIID](https://github.com/fredlcore/ATASCOIID)
+* [MidiJoy](https://github.com/fredlcore/MidiJoy)
+* [AtariWozMon](https://github.com/fredlcore/AtariWozMon)
+* [Jatari cart](https://github.com/jhusak/jataricart/tree/master)
+* [Władca](https://github.com/old8bitpl/atari-wladca-src)
+* [Jump!](https://github.com/dinadan67/jump-for-mads)
