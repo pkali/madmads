@@ -17323,12 +17323,13 @@ procedure Syntax;
 begin
 
  //TextColor(WHITE);
- Writeln(Tab2Space(load_mes(mads_version)) + ' (' + {$i %DATE%} + ')');
+ Writeln('MadMads, based on ' + Tab2Space(load_mes(mads_version)) + ' (' + {$i %DATE%} + ')');
 
  Flush(Output);
 
  //TextColor(DARKGRAY);
  Writeln(Tab2Space(load_mes(mads_version-2)));
+ Writeln('-a[:filename]   Generate ".a65" simple assembler output file');
 
  Flush(Output);
 

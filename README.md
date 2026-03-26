@@ -1,5 +1,47 @@
 ### MadMads - MADS with a simple assembler output
 
+## Current status
+
+MadMads is a working fork of MADS that adds a lowered text-output mode alongside the normal binary output.
+
+What users get today:
+
+- a new `-A` or `-A:file.a65` switch that writes simple assembler output,
+- executable help output that identifies the fork as `MadMads`,
+- byte-exact Scorch round-trips for both Atari targets currently used for validation,
+- readable lowering of common helper pseudo-ops such as `MVA`, `MVX`, `MVY`, `MWA`, `MWX`, `MWY`, `ADB`, `SBB`, `ADW`, `SBW`, `CPW`, `INW`, and `DEW`,
+- structural lowering of skip-prefix pseudo-ops such as `SEQ`, `SNE`, `SPL`, `SMI`, `SCC`, `SCS`, `SVC`, and `SVS`,
+- preservation of symbolic byte/word data where it is safe to do so,
+- normalized output directives such as `.BYTE` and `.WORD` even when the original source used shorthand forms like `.BY` or `.WO`.
+
+Current validation status:
+
+- `mads -A scorch.asm -d:TARGET=800` reproduces the original Atari 800 output byte-for-byte,
+- `mads -A scorch.asm -d:TARGET=5200` reproduces the original 5200 cartridge image byte-for-byte.
+
+## Quick start
+
+Build MadMads:
+
+```sh
+fpc -Mdelphi -vh -O3 ~/projects/madmads/Mad-Assembler/mads.pas
+```
+
+Generate lowered asm output:
+
+```sh
+~/projects/madmads/Mad-Assembler/mads ~/projects/scorch_src/scorch.asm -o:scorch.xex -l:scorch.lst -A:scorch800.a65
+```
+
+Round-trip validation for Scorch uses the public Scorch sources from https://github.com/pkali/scorch_src.
+
+```sh
+git clone https://github.com/pkali/scorch_src ~/projects/scorch_src
+cd ~/projects/madmads
+./scripts/mads-roundtrip.sh 800
+./scripts/mads-roundtrip.sh 5200
+```
+
 ## Working goal
 
 Extend MADS so it can emit not only binary output, but also a second output format: a plain 6502 assembly listing that represents the fully expanded program after macros, expressions, includes, and most MADS-specific conveniences have already been resolved.
@@ -363,24 +405,21 @@ That gives a narrow additive path with minimal risk to the existing assembler.
 
 A first code prototype now exists in MADS.
 
-Current behavior:
+At this point the prototype is no longer just a hook experiment. The user-visible current behavior is summarized at the top of this README; this section focuses on the implementation characteristics that matter when extending it further.
 
-- a new optional command-line switch `-A` or `-A:file.a65` writes a prototype text output,
-- it emits `ORG` when address flow is discontinuous,
-- it emits plain `NAME = value` definitions from the normal `EQU` / `SET` path,
-- it now emits simple `.DEF NAME = value` configuration symbols as plain `NAME = value` lines too,
-- it preserves `OPT` directives verbatim from the original source,
-- it preserves `.PROC` / `.ENDP` verbatim for round-trip testing,
-- it lowers `INS` to explicit chunked `.BYTE` output,
-- it lowers `.ZPVAR` allocations to plain `NAME = $XX` style symbol definitions,
-- it emits labels from the normal label-definition path,
-- it preserves special label-kind metadata in the main symbol table, so helper constructs like `@enum(...)` survive expression evaluation correctly,
-- it emits ordinary instruction lines when the source text is trustworthy and the mnemonic is a real CPU instruction,
-- it expands simple `MVA`, `MVX`, `MVY`, `MWA`, `MWX`, `MWY`, `ADB`, `SBB`, `CPW`, `ADW`, `SBW`, `INW`, and `DEW` macro uses into readable plain-instruction sequences,
-- it emits structured `.WORD` lines for pure 16-bit data and `.BYTE` lines for mixed or byte-oriented data,
-- it preserves simple source `.WORD` / `.BYTE` lines when doing so is safe,
-- it lowers pseudo-branches with size-aware emission, using short `Bxx` forms or inverted-branch plus `JMP` sequences so the round-trip keeps original MADS sizing,
-- it still falls back to `.BYTE ...` when source reconstruction is synthetic or not yet safe to reuse.
+Internally, the current prototype:
+
+- emits `ORG` on discontinuous address flow,
+- lowers `EQU` / `SET` / simple `.DEF` definitions to plain `NAME = value` lines,
+- preserves `OPT` and currently preserves `.PROC` / `.ENDP` for round-trip safety,
+- lowers `INS` to explicit chunked `.BYTE` output,
+- lowers `.ZPVAR` allocations to plain symbol definitions,
+- preserves special label-kind metadata so helper forms such as `@enum(...)` survive expression evaluation,
+- prefers trustworthy source-text reuse for instructions and simple data lines, with fallback to synthesized `.BYTE` / `.WORD` output when necessary,
+- performs size-aware pseudo-branch lowering so the reassembled output keeps original MADS sizing.I am not sure about versioning yet...
+Maybe 
+`Ma, based on mads 2.1.8 (2026/03/26)`
+
 
 Verified optimizer note:
 
@@ -397,26 +436,14 @@ Important limitations of the current prototype:
 - data lowering is still incomplete for cases beyond the current line-oriented `.BYTE` / `.WORD` reconstruction,
 - this is a hook-validation prototype, not the final backend.
 
-Recent validation milestone:
+Technical validation notes:
 
-- the `@enum(label1|label2|...)` helper form now assembles correctly again,
-- the main Scorch Atari build (`scorch.asm -d:TARGET=800`) now runs through with `-A` enabled and produces lowered text output instead of failing in `ATARISYS.ASM`.
-- generated Scorch output now contains preserved `.PROC` / `.ENDP` blocks, which restores a large part of procedure-local structure for round-trip testing,
-- the Scorch round-trip now closes fully for both Atari targets: `mads -A scorch.asm -d:TARGET=800` reproduces `orig.xex` byte-for-byte, and `mads -A scorch.asm -d:TARGET=5200` reproduces the original `32768`-byte cartridge blob byte-for-byte.
-
-Latest fidelity fix:
-
-- `ADW` lowering now matches original MADS sizing in the cases Scorch depends on,
-- the short carry/`INC` form is emitted only when the original macro size proves MADS used that form,
-- preserving simple symbolic data lines and pseudo-branches restores the `-x` procedure-reference graph for Scorch,
-- current Scorch validation is now byte-exact again for both Atari targets after readable `MVX` / `MVY` / broader `MWA` lowering,
-- current Scorch validation remains byte-exact for both Atari targets after lowering `ADB`, `SBB`, `MWX`, `MWY`, `CPW`, and `SBW` to real 6502 instructions,
-- skip-prefix pseudo-ops `SEQ`, `SNE`, `SPL`, `SMI`, `SCC`, `SCS`, `SVC`, and `SVS` now lower structurally to real `Bxx` skip wrappers around the next source statement or whole user-macro expansion,
-- this covers Scorch cases like `sne:mva #1 fs` and `seq:wait` without shortening the branch span or breaking macro-local labels,
-- `ADB`, `SBB`, `MWX`, `MWY`, `CPW`, and `SBW` no longer appear as pseudo-op lines or `.BYTE ... ; pseudoop ...` fallbacks in the generated Scorch outputs,
-- the generated Scorch outputs also no longer contain raw `.BYTE ... ; seq|sne|scc|scs|spl|smi|svc|svs` fallbacks,
-- the remaining asmout gaps are now outside this Scorch-driven pseudo-op batch,
-- the remaining `.lab` differences are label-table-only noise from readable helper labels like `__ASMOUT_*` and one macro-internal anonymous label that currently reappears as `7@` instead of the original synthetic `VMAIN0.7@`.
+- `@enum(label1|label2|...)` assembles correctly again,
+- preserved `.PROC` / `.ENDP` blocks restore a large part of procedure-local structure in generated Scorch output,
+- Scorch round-trips now close fully for both Atari targets with `-A` enabled,
+- `ADW` lowering matches original MADS sizing in the Scorch-dependent cases,
+- skip-prefix pseudo-ops `SEQ`, `SNE`, `SPL`, `SMI`, `SCC`, `SCS`, `SVC`, and `SVS` lower structurally to real `Bxx` skip wrappers without breaking macro-local labels or branch span,
+- the remaining `.lab` differences are mostly label-table noise from readable helper labels such as `__ASMOUT_*` and one macro-internal anonymous-label mismatch.
 
 ## Suggested phase breakdown
 
@@ -512,8 +539,8 @@ cd ~/projects/madmads
 ./scripts/mads-roundtrip.sh 5200
 ```
 
-Assemble a MADS source file:
+Using MadMads:
 
 ```sh
-~/projects/madmads/Mad-Assembler/mads ~/projects/scorch_src/scorch.asm -o:scorch.xex -l:scorch.lst
+~/projects/madmads/Mad-Assembler/mads ~/projects/scorch_src/scorch.asm -o:scorch.xex -l:scorch.lst -A:scorch800.a65
 ```
