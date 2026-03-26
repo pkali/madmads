@@ -1,0 +1,163 @@
+; MADS simple assembler output prototype
+; Source: test6502.asm
+
+ORG $1000
+    ADC ($80,X)
+    ADC $a0
+    ADC #$08
+    ADC $a000
+    ADC ($80),y
+    ADC $80,X
+    ADC $2000,Y
+    ADC $2000,X
+    BRK
+    CLC
+    CLI
+    CLV
+    CLD
+    PHP
+    PLP
+    PHA
+    PLA
+    RTI
+    RTS
+    SEC
+    SEI
+    SED
+    INY
+    INX
+    DEY
+    DEX
+    TXA
+    TYA
+    TXS
+    TAY
+    TAX
+    TSX
+    NOP
+    BPL *+4
+    BMI *+4
+    BNE *+4
+    BCC *+4
+    BCS *+4
+    BEQ *+4
+    BVC *+4
+    BVS *+4
+    ADC ($80,X)
+    ADC $a0
+    ADC #$08
+    ADC $a000
+    ADC ($80),y
+    ADC $80,X
+    ADC $2000,Y
+    ADC $2000,X
+    AND ($80,X)
+    AND $a0
+    AND #$08
+    AND $a000
+    AND ($80),y
+    AND $80,X
+    AND $2000,Y
+    AND $2000,X
+    ASL $a0
+    ASL @
+    ASL $a000
+    ASL $80,X
+    ASL $2000,X
+    BIT $a0
+    BIT $a000
+    CMP ($80,X)
+    CMP $a0
+    CMP #$08
+    CMP $a000
+    CMP ($80),y
+    CMP $80,X
+    CMP $2000,Y
+    CMP $2000,X
+    CPY #$08
+    CPY $a0
+    CPY $a000
+    CPX #$08
+    CPX $a0
+    CPX $a000
+    DEC $a0
+    DEC $a000
+    DEC $80,X
+    DEC $2000,X
+    INC $a0
+    INC $a000
+    INC $80,X
+    INC $2000,X
+    EOR ($80,X)
+    EOR $a0
+    EOR #$08
+    EOR $a000
+    EOR ($80),y
+    EOR $80,X
+    EOR $2000,Y
+    EOR $2000,X
+    JSR $a000
+    JMP $a000
+    JMP ($0600)
+    LDA ($80,X)
+    LDA $a0
+    LDA #$08
+    LDA $a000
+    LDA ($80),y
+    LDA $80,X
+    LDA $2000,Y
+    LDA $2000,X
+    LDX #$08
+    LDX $a0
+    LDX $a000
+    LDX $80,Y
+    LDX $2000,Y
+    LDY #$08
+    LDY $a0
+    LDY $a000
+    LDY $80,X
+    LDY $2000,X
+    LSR $a0
+    LSR @
+    LSR $a000
+    LSR $80,X
+    LSR $2000,X
+    ORA ($80,X)
+    ORA $a0
+    ORA #$08
+    ORA $a000
+    ORA ($80),y
+    ORA $80,X
+    ORA $2000,Y
+    ORA $2000,X
+    ROL $a0
+    ROL @
+    ROL $a000
+    ROL $80,X
+    ROL $2000,X
+    ROR $a0
+    ROR @
+    ROR $a000
+    ROR $80,X
+    ROR $2000,X
+    SBC ($80,X)
+    SBC $a0
+    SBC #$08
+    SBC $a000
+    SBC ($80),y
+    SBC $80,X
+    SBC $2000,Y
+    SBC $2000,X
+    STA ($80,X)
+    STA $a0
+    STA $a000
+    STA ($80),y
+    STA $80,X
+    STA $2000,Y
+    STA $2000,X
+    STX $a0
+    STX $a000
+    STX $80,Y
+    STY $a0
+    STY $a000
+    STY $80,X

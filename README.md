@@ -495,13 +495,19 @@ Once that format is fixed, it becomes much easier to decide exactly where to hoo
 Build MADS:
 
 ```sh
-fpc -Mdelphi -vh -O3 ~/projects/madson/Mad-Assembler/mads.pas
+fpc -Mdelphi -vh -O3 ~/projects/madmads/Mad-Assembler/mads.pas
+```
+
+Round-trip validation for Scorch uses the public Scorch sources from https://github.com/pkali/scorch_src. Clone that repository next to this one as `scorch_src`, or adjust the validation script inputs to wherever you keep it.
+
+```sh
+git clone https://github.com/pkali/scorch_src ~/projects/scorch_src
 ```
 
 Round-trip validation for Scorch:
 
 ```sh
-cd ~/projects/madson
+cd ~/projects/madmads
 ./scripts/mads-roundtrip.sh 800
 ./scripts/mads-roundtrip.sh 5200
 ```
@@ -509,5 +515,5 @@ cd ~/projects/madson
 Assemble a MADS source file:
 
 ```sh
-~/projects/madson/mads ~/projects/scorch_src/scorch.asm -o:scorch.xex -l:scorch.lst
+~/projects/madmads/Mad-Assembler/mads ~/projects/scorch_src/scorch.asm -o:scorch.xex -l:scorch.lst
 ```

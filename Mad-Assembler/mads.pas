@@ -285,7 +285,7 @@ const
 var
 //    OutBuf: array [0..100000] of char;
 
-    lst, lab, hhh, mmm: textfile;
+  lst, lab, hhh, mmm, asmout: textfile;
     dst: file;
 
     label_type: char = 'V';
@@ -325,7 +325,22 @@ var
     while_name, test_name, lst_string, lst_header, etyArray: string;
     path, name, t, global_name, proc_name, def_label: string;
     end_string, plik_h, plik_hm, plik_lst, plik_obj, warning_mes: string;
-    plik_lab, plik_mac, plik_asm, macro_nr, lokal_name, warning_old: string;
+    plik_lab, plik_mac, plik_asm, plik_asmout, macro_nr, lokal_name, warning_old: string;
+
+    asmout_enabled, asmout_open, asmout_has_org, asmout_line_emitted, asmout_skip_next_label: Boolean;
+    asmout_pending_skip_active, asmout_skip_capture_active: Boolean;
+    asmout_org: integer;
+    asmout_data_active, asmout_data_force_byte: Boolean;
+    asmout_data_address: integer;
+    asmout_generated_label_id: integer;
+    asmout_pending_skip_address, asmout_pending_skip_size, asmout_skip_capture_size: integer;
+    asmout_pending_skip_branch, asmout_pending_skip_source_line: string;
+    asmout_pending_skip_bytes: t256byt;
+    asmout_skip_capture_lines: _strArray;
+    asmout_data_label: string;
+    asmout_data_source_line: string;
+    asmout_data_bytes: array of byte;
+    asmout_data_words: array of word;
 
 
     infinite    : record
@@ -1549,6 +1564,12 @@ begin
   end;
 
 
+  if asmout_open then begin
+   Flush(asmout);
+   CloseFile(asmout);
+  end;
+
+
   if first_lst then begin
    Flush(lst);
    CloseFile(lst);
@@ -1703,6 +1724,1318 @@ begin
  if bank>0 then t:=t+Hex(bank,2)+',';
 
  {if a>=0 then} t:=t+Hex(a,4);           // inaczej nie wyswietli wartosci 64bit
+end;
+
+
+function fASC(const a: string): byte; forward;
+
+
+function asmout_hex(const value: cardinal; const digits: integer): string;
+(*----------------------------------------------------------------------------*)
+(*----------------------------------------------------------------------------*)
+begin
+ Result := '$' + Hex(value, digits);
+end;
+
+
+function asmout_resolve_label_name(const name: string): string;
+(*----------------------------------------------------------------------------*)
+(*----------------------------------------------------------------------------*)
+begin
+ Result := '';
+
+ if name = '' then exit;
+ if name = '@' then exit;
+
+ if mae_labels and (name[1] <> '?') then
+  Result := name
+ else
+  if run_macro then Result := macro_nr+lokal_name+name else
+   if proc then Result := proc_name+lokal_name+name else
+  Result := lokal_name+name;
+end;
+
+
+function asmout_display_label_name(const name: string): string;
+(*----------------------------------------------------------------------------*)
+(*----------------------------------------------------------------------------*)
+var idx, segmentStart: integer;
+    anonymous: Boolean;
+begin
+ Result := name;
+ if name = '' then exit;
+
+ if proc and (proc_name <> '') then
+  if Pos(proc_name, Result) = 1 then Delete(Result, 1, Length(proc_name));
+
+ if Result = '' then exit;
+
+ segmentStart := Length(Result);
+ while (segmentStart > 1) and (Result[segmentStart-1] <> '.') do dec(segmentStart);
+
+ if Result[segmentStart] = '?' then begin
+  Result := Copy(Result, segmentStart, MaxInt);
+  exit;
+ end;
+
+ idx := Length(Result);
+ if Result[idx] <> '@' then exit;
+
+ segmentStart := idx;
+ while (segmentStart > 1) and (Result[segmentStart-1] <> '.') do dec(segmentStart);
+
+ anonymous := segmentStart < idx;
+ while anonymous and (segmentStart < idx) do begin
+  if not(Result[segmentStart] in ['0'..'9']) then anonymous := false else inc(segmentStart);
+ end;
+
+ if anonymous then Result := '@';
+end;
+
+
+function asmout_address_digits(const address: integer): integer;
+(*----------------------------------------------------------------------------*)
+(*----------------------------------------------------------------------------*)
+begin
+ if address > $FFFF then
+  Result := 6
+ else
+  Result := 4;
+end;
+
+
+function asmout_strip_comment(const line: string): string;
+(*----------------------------------------------------------------------------*)
+(*----------------------------------------------------------------------------*)
+var p: integer;
+begin
+ Result := line;
+ p := Pos(';', Result);
+ if p > 0 then SetLength(Result, p-1);
+ Result := Trim(Result);
+end;
+
+
+function asmout_source_looks_like_assignment(const line: string): boolean;
+(*----------------------------------------------------------------------------*)
+(*----------------------------------------------------------------------------*)
+var
+ sourceUpper: string;
+begin
+ sourceUpper := UpCase(asmout_strip_comment(line));
+ Result := (Pos('=', sourceUpper) > 0) or
+           (Pos(' EQU ', ' ' + sourceUpper + ' ') > 0) or
+           (Pos(' SET ', ' ' + sourceUpper + ' ') > 0);
+end;
+
+
+function asmout_source_is_repeat_line(const line: string): boolean;
+(*----------------------------------------------------------------------------*)
+(*----------------------------------------------------------------------------*)
+var
+ trimmed, body, token: string;
+ idx, tokenEnd: integer;
+ mnemonicCode: byte;
+begin
+ trimmed := TrimLeft(asmout_strip_comment(line));
+ Result := false;
+ if (trimmed = '') or (trimmed[1] <> ':') then exit;
+
+ idx := 2;
+ while (idx <= Length(trimmed)) and (trimmed[idx] in ['+','-','0'..'9']) do inc(idx);
+ while (idx <= Length(trimmed)) and (trimmed[idx] in [' ', #9]) do inc(idx);
+
+ body := Copy(trimmed, idx, Length(trimmed));
+ if body = '' then exit;
+
+ tokenEnd := 1;
+ while (tokenEnd <= Length(body)) and not(body[tokenEnd] in [' ', #9]) do inc(tokenEnd);
+ token := UpperCase(Copy(body, 1, tokenEnd-1));
+ if token = '' then exit;
+
+ if Length(token) <> 3 then exit;
+
+ mnemonicCode := fASC(token);
+
+ if not(opt and opt_C>0) then begin
+  if mnemonicCode in [57..92] then mnemonicCode := 0;
+ end else
+  if mnemonicCode in [96..118] then mnemonicCode := 0;
+
+ Result := mnemonicCode in [1..56, 57..92, 96..118];
+end;
+
+
+function asmout_next_label_name: string;
+(*----------------------------------------------------------------------------*)
+(*----------------------------------------------------------------------------*)
+begin
+ inc(asmout_generated_label_id);
+ Result := '__ASMOUT_' + IntToStr(asmout_generated_label_id);
+end;
+
+
+function asmout_skip_branch_mnemonic(const line: string): string;
+(*----------------------------------------------------------------------------*)
+(*----------------------------------------------------------------------------*)
+var body, token: string;
+  splitPos, colonPos: integer;
+begin
+ Result := '';
+
+ body := TrimLeft(asmout_strip_comment(line));
+ if body = '' then exit;
+
+ splitPos := 1;
+ while (splitPos <= Length(body)) and not(body[splitPos] in [' ', #9]) do inc(splitPos);
+ token := UpperCase(Copy(body, 1, splitPos-1));
+
+ colonPos := Pos(':', token);
+ if colonPos > 0 then token := Copy(token, 1, colonPos-1);
+
+ if token = 'SEQ' then Result := 'BEQ' else
+  if token = 'SNE' then Result := 'BNE' else
+   if token = 'SPL' then Result := 'BPL' else
+    if token = 'SMI' then Result := 'BMI' else
+     if token = 'SCC' then Result := 'BCC' else
+      if token = 'SCS' then Result := 'BCS' else
+       if token = 'SVC' then Result := 'BVC' else
+        if token = 'SVS' then Result := 'BVS';
+end;
+
+
+procedure asmout_append_line(var lines: _strArray; const line: string);
+(*----------------------------------------------------------------------------*)
+(*----------------------------------------------------------------------------*)
+var idx: integer;
+begin
+ idx := Length(lines);
+ SetLength(lines, idx+1);
+ lines[idx] := line;
+end;
+
+
+procedure asmout_append_lines(var lines: _strArray; const extraLines: _strArray);
+(*----------------------------------------------------------------------------*)
+(*----------------------------------------------------------------------------*)
+var idx: integer;
+begin
+ for idx := 0 to High(extraLines) do
+  asmout_append_line(lines, extraLines[idx]);
+end;
+
+
+function asmout_try_simple_data_source_line(const line: string; out textLine: string): Boolean;
+(*----------------------------------------------------------------------------*)
+(*----------------------------------------------------------------------------*)
+var body, originalBody, token, commentText: string;
+  idx, splitPos, colonPos: integer;
+  hadLeadingLabel: Boolean;
+
+  function asmout_is_simple_data_directive(const bodyValue: string): Boolean;
+  var directiveToken: string;
+    tokenEnd: integer;
+  begin
+   directiveToken := TrimLeft(bodyValue);
+   tokenEnd := 1;
+   while (tokenEnd <= Length(directiveToken)) and not(directiveToken[tokenEnd] in [' ', #9]) do inc(tokenEnd);
+   directiveToken := UpperCase(Copy(directiveToken, 1, tokenEnd-1));
+
+   Result := (directiveToken = '.BYTE') or
+      (directiveToken = '.BY') or
+      (directiveToken = '.WORD') or
+      (directiveToken = '.LONG') or
+      (directiveToken = '.DWORD');
+  end;
+begin
+ Result := false;
+ textLine := '';
+ hadLeadingLabel := false;
+
+ body := asmout_strip_comment(line);
+ originalBody := TrimLeft(body);
+ body := originalBody;
+ if body = '' then exit;
+
+ if not asmout_is_simple_data_directive(body) then begin
+  splitPos := 1;
+  while (splitPos <= Length(body)) and not(body[splitPos] in [' ', #9]) do inc(splitPos);
+
+  token := Copy(body, 1, splitPos-1);
+  colonPos := Pos(':', token);
+
+  if (token = '') or (token[1] = '.') or (colonPos > 0) then exit;
+
+  idx := splitPos;
+  while (idx <= Length(body)) and (body[idx] in [' ', #9]) do inc(idx);
+  body := Copy(body, idx, Length(body));
+  if not asmout_is_simple_data_directive(body) then exit;
+  hadLeadingLabel := true;
+ end;
+
+ if Pos(':', body) > 0 then exit;
+
+ if hadLeadingLabel then begin
+  commentText := TrimLeft(Copy(line, Length(asmout_strip_comment(line)) + 1, Length(line)));
+  textLine := '    ' + TrimRight(body);
+  if commentText <> '' then textLine := textLine + ' ' + commentText;
+ end else
+  textLine := TrimRight(line);
+
+ Result := textLine <> '';
+end;
+
+
+function asmout_is_simple_macro_operand(const operand: string): Boolean;
+(*----------------------------------------------------------------------------*)
+(*----------------------------------------------------------------------------*)
+begin
+ Result := (operand <> '') and
+     (Pos(' ', operand) = 0) and
+     (Pos(#9, operand) = 0) and
+     (Pos(',', operand) = 0);
+end;
+
+
+function asmout_is_simple_mva_operand(const operand: string): Boolean;
+(*----------------------------------------------------------------------------*)
+(*----------------------------------------------------------------------------*)
+begin
+ Result := (operand <> '') and
+   (Pos(' ', operand) = 0) and
+   (Pos(#9, operand) = 0);
+end;
+
+
+function asmout_is_simple_indexed_macro_operand(const operand: string): Boolean;
+(*----------------------------------------------------------------------------*)
+(*----------------------------------------------------------------------------*)
+var commaPos: integer;
+  indexSuffix: string;
+begin
+ Result := false;
+
+ if (operand = '') or
+    (Pos(' ', operand) <> 0) or
+    (Pos(#9, operand) <> 0) or
+    (Pos('(', operand) <> 0) or
+    (Pos(')', operand) <> 0) then exit;
+
+ commaPos := Pos(',', operand);
+ if (commaPos <= 1) or (commaPos >= Length(operand)) then exit;
+ if Pos(',', Copy(operand, commaPos+1, Length(operand))) <> 0 then exit;
+
+ indexSuffix := UpperCase(Copy(operand, commaPos+1, Length(operand)));
+ Result := (indexSuffix = 'X') or (indexSuffix = 'Y');
+end;
+
+
+function asmout_operand_next_byte(const operand: string): string;
+(*----------------------------------------------------------------------------*)
+(*----------------------------------------------------------------------------*)
+var commaPos: integer;
+begin
+ commaPos := Pos(',', operand);
+ if commaPos = 0 then
+  Result := operand + '+1'
+ else
+  Result := Copy(operand, 1, commaPos-1) + '+1' + Copy(operand, commaPos, Length(operand));
+end;
+
+
+function asmout_low_expr(const operand: string): string;
+(*----------------------------------------------------------------------------*)
+(*----------------------------------------------------------------------------*)
+begin
+ if (operand <> '') and (operand[1] = '#') then
+  Result := '#<(' + Copy(operand, 2, Length(operand)) + ')'
+ else
+  Result := operand;
+end;
+
+
+function asmout_high_expr(const operand: string): string;
+(*----------------------------------------------------------------------------*)
+(*----------------------------------------------------------------------------*)
+begin
+ if (operand <> '') and (operand[1] = '#') then
+  Result := '#>(' + Copy(operand, 2, Length(operand)) + ')'
+ else
+  Result := asmout_operand_next_byte(operand);
+end;
+
+
+function asmout_try_parse_immediate_literal(const operand: string; out value: cardinal): Boolean;
+(*----------------------------------------------------------------------------*)
+(*----------------------------------------------------------------------------*)
+var textValue: string;
+  idx: integer;
+begin
+ Result := false;
+ value := 0;
+ if (operand = '') or (operand[1] <> '#') then exit;
+
+ textValue := Trim(Copy(operand, 2, Length(operand)));
+
+ while (Length(textValue) >= 2) and (textValue[1] = '(') and (textValue[Length(textValue)] = ')') do
+  textValue := Trim(Copy(textValue, 2, Length(textValue)-2));
+
+ if textValue = '' then exit;
+
+ if textValue[1] = '$' then begin
+  textValue := UpperCase(Copy(textValue, 2, Length(textValue)));
+  if textValue = '' then exit;
+  for idx := 1 to Length(textValue) do
+   if not(textValue[idx] in ['0'..'9', 'A'..'F']) then exit;
+  value := cardinal(StrToQWord('$' + textValue));
+  Result := true;
+ end else if textValue[1] = '%' then begin
+  textValue := Copy(textValue, 2, Length(textValue));
+  if textValue = '' then exit;
+  for idx := 1 to Length(textValue) do begin
+   if not(textValue[idx] in ['0', '1']) then exit;
+   value := (value shl 1) or cardinal(Ord(textValue[idx] = '1'));
+  end;
+  Result := true;
+ end else begin
+  for idx := 1 to Length(textValue) do
+   if not(textValue[idx] in ['0'..'9']) then exit;
+  value := cardinal(StrToQWord(textValue));
+  Result := true;
+ end;
+end;
+
+
+function asmout_can_reuse_immediate_word_load(const operand: string): Boolean;
+(*----------------------------------------------------------------------------*)
+(*----------------------------------------------------------------------------*)
+var immediateValue: cardinal;
+begin
+ Result := asmout_try_parse_immediate_literal(operand, immediateValue) and
+       ((immediateValue and $FF) = ((immediateValue shr 8) and $FF));
+end;
+
+
+function asmout_can_use_short_immediate_adw(const sourceOperand: string; const deltaOperand: string; const targetOperand: string; const size: integer): Boolean;
+(*----------------------------------------------------------------------------*)
+(*----------------------------------------------------------------------------*)
+begin
+ Result := (sourceOperand = targetOperand) and
+   (deltaOperand <> '') and
+   (deltaOperand[1] = '#') and
+   (size in [11, 14]);
+end;
+
+
+function asmout_can_use_short_immediate_sbw(const sourceOperand: string; const deltaOperand: string; const targetOperand: string; const operandCount: integer; const size: integer): Boolean;
+(*----------------------------------------------------------------------------*)
+(*----------------------------------------------------------------------------*)
+begin
+ Result := (operandCount = 2) and
+   (sourceOperand = targetOperand) and
+   (deltaOperand <> '') and
+   (deltaOperand[1] = '#') and
+   (size in [11, 14]);
+end;
+
+
+function asmout_can_lower_cpw(const firstOperand: string; const secondOperand: string; const size: integer): Boolean;
+(*----------------------------------------------------------------------------*)
+(*----------------------------------------------------------------------------*)
+begin
+ Result := (size >= 8) and
+   asmout_is_simple_macro_operand(firstOperand) and
+   asmout_is_simple_macro_operand(secondOperand);
+end;
+
+
+procedure asmout_emit_org(const address: integer); forward;
+procedure asmout_emit_label(const name: string; const address: integer); forward;
+procedure asmout_emit_bytes(const address: integer; const data: t256byt; const count: byte; const note: string = ''); forward;
+procedure asmout_emit_skip_wrapped_lines(const address: integer; const totalSize: integer; const branchMnemonic: string; const innerLines: _strArray); forward;
+function asmout_try_instruction_text(const line: string; out textOut: string): Boolean; forward;
+function asmout_try_pseudo_branch_lines(const line: string; const size: integer; out lines: _strArray): Boolean; forward;
+procedure asmout_emit_pending_skip_raw; forward;
+
+
+function asmout_is_supported_macro(const name: string): Boolean;
+(*----------------------------------------------------------------------------*)
+(*----------------------------------------------------------------------------*)
+begin
+ Result := (name = 'MVA') or (name = 'MVX') or (name = 'MVY') or (name = 'MWA') or
+   (name = 'ADW') or (name = 'SBW') or (name = 'INW') or (name = 'DEW') or
+   (name = 'ADB') or (name = 'SBB') or (name = 'MWX') or (name = 'MWY') or
+   (name = 'CPW');
+end;
+
+
+function asmout_try_macro_lines(const line: string; const size: integer; out lines: _strArray): Boolean;
+(*----------------------------------------------------------------------------*)
+(*----------------------------------------------------------------------------*)
+var body, token, macroName, rest, firstOperand, secondOperand, thirdOperand: string;
+  splitPos, operandCount: integer;
+    skipLabel: string;
+
+    function next_token(var text: string): string;
+    var posn: integer;
+    begin
+     text := Trim(text);
+     if text = '' then begin
+      Result := '';
+      exit;
+     end;
+
+     posn := 1;
+     while (posn <= Length(text)) and not(text[posn] in [' ', #9]) do inc(posn);
+
+     Result := Copy(text, 1, posn-1);
+     Delete(text, 1, posn-1);
+     text := Trim(text);
+    end;
+
+begin
+ Result := false;
+ lines := Default(_strArray);
+
+ body := asmout_strip_comment(line);
+ if body = '' then exit;
+
+ splitPos := 1;
+ while (splitPos <= Length(body)) and not(body[splitPos] in [' ', #9]) do inc(splitPos);
+ token := Copy(body, 1, splitPos-1);
+ rest := Trim(Copy(body, splitPos, Length(body)));
+
+ macroName := UpperCase(token);
+ if not asmout_is_supported_macro(macroName) then begin
+  if rest = '' then exit;
+  token := next_token(rest);
+  macroName := UpperCase(token);
+  if not asmout_is_supported_macro(macroName) then exit;
+ end;
+
+ firstOperand := next_token(rest);
+ secondOperand := next_token(rest);
+ thirdOperand := next_token(rest);
+
+ if rest <> '' then exit;
+
+ operandCount := 0;
+ if firstOperand <> '' then inc(operandCount);
+ if secondOperand <> '' then inc(operandCount);
+ if thirdOperand <> '' then inc(operandCount);
+
+ if macroName = 'CPW' then begin
+  if operandCount <> 2 then exit;
+  if not asmout_can_lower_cpw(firstOperand, secondOperand, size) then exit;
+
+  skipLabel := asmout_next_label_name;
+
+  asmout_append_line(lines, '    LDA ' + asmout_high_expr(firstOperand));
+  asmout_append_line(lines, '    CMP ' + asmout_high_expr(secondOperand));
+  asmout_append_line(lines, '    BNE ' + skipLabel);
+  asmout_append_line(lines, '    LDA ' + asmout_low_expr(firstOperand));
+  asmout_append_line(lines, '    CMP ' + asmout_low_expr(secondOperand));
+  asmout_append_line(lines, skipLabel);
+ end else if (macroName = 'ADB') or (macroName = 'SBB') then begin
+  if not(operandCount in [2,3]) then exit;
+
+  if thirdOperand = '' then begin
+   thirdOperand := firstOperand;
+   if (firstOperand <> '') and (firstOperand[1] = '#') and
+      ((secondOperand = '') or (secondOperand[1] <> '#')) then
+    thirdOperand := secondOperand;
+  end;
+
+  if not(asmout_is_simple_mva_operand(firstOperand) and asmout_is_simple_mva_operand(secondOperand) and asmout_is_simple_mva_operand(thirdOperand)) then exit;
+
+  asmout_append_line(lines, '    LDA ' + firstOperand);
+
+  if macroName = 'ADB' then
+   asmout_append_line(lines, '    CLC')
+  else
+   asmout_append_line(lines, '    SEC');
+
+  if macroName = 'ADB' then
+   asmout_append_line(lines, '    ADC ' + secondOperand)
+  else
+   asmout_append_line(lines, '    SBC ' + secondOperand);
+
+  asmout_append_line(lines, '    STA ' + thirdOperand);
+ end else if macroName = 'MVA' then begin
+  if operandCount <> 2 then exit;
+  if size < 4 then exit;
+  if not(asmout_is_simple_mva_operand(firstOperand) and asmout_is_simple_mva_operand(secondOperand)) then exit;
+
+  if regAXY_opty then asmout_append_line(lines, '    OPT R-');
+  asmout_append_line(lines, '    LDA ' + firstOperand);
+  asmout_append_line(lines, '    STA ' + secondOperand);
+  if regAXY_opty then asmout_append_line(lines, '    OPT R+');
+ end else if macroName = 'MVX' then begin
+  if operandCount <> 2 then exit;
+  if size < 4 then exit;
+  if not(asmout_is_simple_mva_operand(firstOperand) and asmout_is_simple_mva_operand(secondOperand)) then exit;
+
+  if regAXY_opty then asmout_append_line(lines, '    OPT R-');
+  asmout_append_line(lines, '    LDX ' + firstOperand);
+  asmout_append_line(lines, '    STX ' + secondOperand);
+  if regAXY_opty then asmout_append_line(lines, '    OPT R+');
+ end else if macroName = 'MVY' then begin
+  if operandCount <> 2 then exit;
+  if size < 4 then exit;
+  if not(asmout_is_simple_mva_operand(firstOperand) and asmout_is_simple_mva_operand(secondOperand)) then exit;
+
+  if regAXY_opty then asmout_append_line(lines, '    OPT R-');
+  asmout_append_line(lines, '    LDY ' + firstOperand);
+  asmout_append_line(lines, '    STY ' + secondOperand);
+  if regAXY_opty then asmout_append_line(lines, '    OPT R+');
+ end else if macroName = 'MWA' then begin
+  if operandCount <> 2 then exit;
+  if not((asmout_is_simple_macro_operand(firstOperand) or asmout_is_simple_indexed_macro_operand(firstOperand)) and asmout_is_simple_macro_operand(secondOperand)) then exit;
+
+  if regAXY_opty then asmout_append_line(lines, '    OPT R-');
+  asmout_append_line(lines, '    LDA ' + asmout_low_expr(firstOperand));
+  asmout_append_line(lines, '    STA ' + secondOperand);
+  if not asmout_can_reuse_immediate_word_load(firstOperand) then
+   asmout_append_line(lines, '    LDA ' + asmout_high_expr(firstOperand));
+  asmout_append_line(lines, '    STA ' + asmout_operand_next_byte(secondOperand));
+  if regAXY_opty then asmout_append_line(lines, '    OPT R+');
+ end else if (macroName = 'MWX') or (macroName = 'MWY') then begin
+  if operandCount <> 2 then exit;
+  if not((asmout_is_simple_macro_operand(firstOperand) or asmout_is_simple_indexed_macro_operand(firstOperand)) and asmout_is_simple_macro_operand(secondOperand)) then exit;
+
+  if regAXY_opty then asmout_append_line(lines, '    OPT R-');
+
+  if macroName = 'MWX' then begin
+   asmout_append_line(lines, '    LDX ' + asmout_low_expr(firstOperand));
+   asmout_append_line(lines, '    STX ' + secondOperand);
+   if not asmout_can_reuse_immediate_word_load(firstOperand) then
+    asmout_append_line(lines, '    LDX ' + asmout_high_expr(firstOperand));
+   asmout_append_line(lines, '    STX ' + asmout_operand_next_byte(secondOperand));
+  end else begin
+   asmout_append_line(lines, '    LDY ' + asmout_low_expr(firstOperand));
+   asmout_append_line(lines, '    STY ' + secondOperand);
+   if not asmout_can_reuse_immediate_word_load(firstOperand) then
+    asmout_append_line(lines, '    LDY ' + asmout_high_expr(firstOperand));
+   asmout_append_line(lines, '    STY ' + asmout_operand_next_byte(secondOperand));
+  end;
+
+  if regAXY_opty then asmout_append_line(lines, '    OPT R+');
+ end else if (macroName = 'ADW') or (macroName = 'SBW') then begin
+  if not(operandCount in [2,3]) then exit;
+  if thirdOperand = '' then thirdOperand := firstOperand;
+
+  if not(asmout_is_simple_macro_operand(firstOperand) and asmout_is_simple_macro_operand(secondOperand) and asmout_is_simple_macro_operand(thirdOperand)) then exit;
+
+  if macroName = 'SBW' then
+   asmout_append_line(lines, '    SEC')
+  else
+   asmout_append_line(lines, '    CLC');
+
+  asmout_append_line(lines, '    LDA ' + firstOperand);
+
+  if macroName = 'SBW' then
+   asmout_append_line(lines, '    SBC ' + asmout_low_expr(secondOperand))
+  else
+   asmout_append_line(lines, '    ADC ' + asmout_low_expr(secondOperand));
+
+  asmout_append_line(lines, '    STA ' + thirdOperand);
+
+  if (macroName = 'ADW') and asmout_can_use_short_immediate_adw(firstOperand, secondOperand, thirdOperand, size) then begin
+   skipLabel := asmout_next_label_name;
+   asmout_append_line(lines, '    BCC ' + skipLabel);
+   asmout_append_line(lines, '    INC ' + asmout_operand_next_byte(thirdOperand));
+   asmout_append_line(lines, skipLabel);
+  end else if (macroName = 'SBW') and asmout_can_use_short_immediate_sbw(firstOperand, secondOperand, thirdOperand, operandCount, size) then begin
+   skipLabel := asmout_next_label_name;
+   asmout_append_line(lines, '    BCS ' + skipLabel);
+   asmout_append_line(lines, '    DEC ' + asmout_operand_next_byte(thirdOperand));
+   asmout_append_line(lines, skipLabel);
+  end else begin
+   asmout_append_line(lines, '    LDA ' + asmout_operand_next_byte(firstOperand));
+
+   if macroName = 'SBW' then
+    asmout_append_line(lines, '    SBC ' + asmout_high_expr(secondOperand))
+   else
+    asmout_append_line(lines, '    ADC ' + asmout_high_expr(secondOperand));
+
+   asmout_append_line(lines, '    STA ' + asmout_operand_next_byte(thirdOperand));
+  end;
+ end else if macroName = 'INW' then begin
+  if operandCount <> 1 then exit;
+  if not asmout_is_simple_macro_operand(firstOperand) then exit;
+
+  skipLabel := asmout_next_label_name;
+
+  asmout_append_line(lines, '    INC ' + firstOperand);
+  asmout_append_line(lines, '    BNE ' + skipLabel);
+  asmout_append_line(lines, '    INC ' + asmout_operand_next_byte(firstOperand));
+  asmout_append_line(lines, skipLabel);
+ end else if macroName = 'DEW' then begin
+  if operandCount <> 1 then exit;
+  if not asmout_is_simple_macro_operand(firstOperand) then exit;
+
+  skipLabel := asmout_next_label_name;
+
+  asmout_append_line(lines, '    LDA ' + firstOperand);
+  asmout_append_line(lines, '    BNE ' + skipLabel);
+  asmout_append_line(lines, '    DEC ' + asmout_operand_next_byte(firstOperand));
+  asmout_append_line(lines, skipLabel);
+  asmout_append_line(lines, '    DEC ' + firstOperand);
+ end;
+
+ Result := Length(lines) > 0;
+end;
+
+
+procedure asmout_emit_pending_skip_raw;
+(*----------------------------------------------------------------------------*)
+(*----------------------------------------------------------------------------*)
+begin
+ if not asmout_pending_skip_active then exit;
+
+ asmout_pending_skip_active := false;
+ asmout_emit_bytes(asmout_pending_skip_address, asmout_pending_skip_bytes, asmout_pending_skip_size, asmout_pending_skip_source_line);
+ asmout_pending_skip_address := 0;
+ asmout_pending_skip_size := 0;
+ asmout_pending_skip_branch := '';
+ asmout_pending_skip_source_line := '';
+end;
+
+
+procedure asmout_emit_skip_wrapped_lines(const address: integer; const totalSize: integer; const branchMnemonic: string; const innerLines: _strArray);
+(*----------------------------------------------------------------------------*)
+(*----------------------------------------------------------------------------*)
+var idx: integer;
+  skipLabel: string;
+begin
+ if not(asmout_enabled and asmout_open) then exit;
+ if branchMnemonic = '' then exit;
+ if Length(innerLines) = 0 then exit;
+
+ skipLabel := asmout_next_label_name;
+
+ asmout_emit_org(address);
+ writeln(asmout, '    ' + branchMnemonic + ' ' + skipLabel);
+
+ for idx := 0 to High(innerLines) do
+  writeln(asmout, innerLines[idx]);
+
+ writeln(asmout, skipLabel);
+
+ asmout_org := address + totalSize;
+ asmout_line_emitted := true;
+end;
+
+
+procedure asmout_emit_text_lines(const address: integer; const lines: _strArray; const size: integer);
+(*----------------------------------------------------------------------------*)
+(*----------------------------------------------------------------------------*)
+var idx: integer;
+begin
+ if not(asmout_enabled and asmout_open) then exit;
+ if Length(lines) = 0 then exit;
+
+ if asmout_skip_capture_active then begin
+  asmout_append_lines(asmout_skip_capture_lines, lines);
+  inc(asmout_skip_capture_size, size);
+  asmout_line_emitted := true;
+  exit;
+ end;
+
+ asmout_emit_pending_skip_raw;
+
+ asmout_emit_org(address);
+
+ for idx := 0 to High(lines) do writeln(asmout, lines[idx]);
+
+ asmout_org := address + size;
+ asmout_line_emitted := true;
+end;
+
+
+function asmout_try_macro_text(const line: string; const address: integer; const size: integer): Boolean;
+(*----------------------------------------------------------------------------*)
+(*----------------------------------------------------------------------------*)
+var lines: _strArray;
+begin
+ Result := asmout_try_macro_lines(line, size, lines);
+ if not Result then exit;
+
+ asmout_emit_text_lines(address, lines, size);
+end;
+
+
+function asmout_try_instruction_text(const line: string; out textOut: string): Boolean;
+(*----------------------------------------------------------------------------*)
+(*----------------------------------------------------------------------------*)
+var body, token, rest: string;
+  idx, splitPos, colonPos: integer;
+  mnemonicCode: byte;
+
+  function asmout_is_supported_pseudo_instruction(const tokenValue: string): Boolean;
+  begin
+    Result := (tokenValue = 'JEQ') or (tokenValue = 'JNE') or
+      (tokenValue = 'JPL') or (tokenValue = 'JMI') or
+      (tokenValue = 'JCC') or (tokenValue = 'JCS') or
+      (tokenValue = 'JVC') or (tokenValue = 'JVS');
+  end;
+
+  function asmout_mnemonic_code(const tokenValue: string): byte;
+  begin
+   Result := fASC(UpperCase(tokenValue));
+
+   if not(opt and opt_C>0) then begin
+    if Result in [57..92] then Result := 0;
+   end else
+    if Result in [96..118] then Result := 0;
+
+   if not(Result in [1..56, 57..92, 96..118]) then Result := 0;
+  end;
+
+  function asmout_is_implied_only_mnemonic(const tokenValue: string): Boolean;
+  begin
+    Result := (tokenValue = 'BRK') or (tokenValue = 'CLC') or (tokenValue = 'CLD') or
+           (tokenValue = 'CLI') or (tokenValue = 'CLV') or (tokenValue = 'DEX') or
+           (tokenValue = 'DEY') or (tokenValue = 'INX') or (tokenValue = 'INY') or
+           (tokenValue = 'NOP') or (tokenValue = 'PHA') or (tokenValue = 'PHP') or
+           (tokenValue = 'PHX') or (tokenValue = 'PHY') or (tokenValue = 'PLA') or
+           (tokenValue = 'PLP') or (tokenValue = 'PLX') or (tokenValue = 'PLY') or
+           (tokenValue = 'RTI') or (tokenValue = 'RTL') or (tokenValue = 'RTS') or
+           (tokenValue = 'SEC') or (tokenValue = 'SED') or (tokenValue = 'SEI') or
+           (tokenValue = 'TAX') or (tokenValue = 'TAY') or (tokenValue = 'TRB') or
+           (tokenValue = 'TSB') or (tokenValue = 'TSX') or (tokenValue = 'TXA') or
+           (tokenValue = 'TXS') or (tokenValue = 'TXY') or (tokenValue = 'TYA') or
+           (tokenValue = 'TYX') or (tokenValue = 'WAI') or (tokenValue = 'XBA');
+  end;
+begin
+ Result := false;
+ textOut := '';
+
+ body := asmout_strip_comment(line);
+ if body = '' then exit;
+ if Pos(':', body) > 0 then exit;
+
+ splitPos := 1;
+ while (splitPos <= Length(body)) and not(body[splitPos] in [' ', #9]) do inc(splitPos);
+
+ token := Copy(body, 1, splitPos-1);
+ colonPos := Pos(':', token);
+
+ if (token = '') or (token[1] = '.') or (colonPos > 0) then exit;
+
+ mnemonicCode := asmout_mnemonic_code(token);
+
+ if mnemonicCode = 0 then begin
+  idx := splitPos;
+  while (idx <= Length(body)) and (body[idx] in [' ', #9]) do inc(idx);
+  body := Copy(body, idx, Length(body));
+  if body = '' then exit;
+
+  splitPos := 1;
+  while (splitPos <= Length(body)) and not(body[splitPos] in [' ', #9]) do inc(splitPos);
+
+  token := Copy(body, 1, splitPos-1);
+  if (token = '') or (token[1] = '.') then exit;
+ end;
+
+ idx := splitPos;
+ while (idx <= Length(body)) and (body[idx] in [' ', #9]) do inc(idx);
+ rest := Copy(body, idx, Length(body));
+
+ if Length(token) <> 3 then exit;
+
+ token := UpperCase(token);
+ if asmout_is_supported_pseudo_instruction(token) then begin
+  if rest = '' then exit;
+  textOut := '    ' + token + ' ' + rest;
+  Result := true;
+  exit;
+ end;
+
+ mnemonicCode := asmout_mnemonic_code(token);
+ if mnemonicCode = 0 then exit;
+ if (Pos('#', rest) > 1) or ((rest <> '') and (rest[1] = '#') and (Pos('#', Copy(rest, 2, Length(rest))) > 0)) then exit;
+ if (rest <> '') and asmout_is_implied_only_mnemonic(token) then exit;
+
+ textOut := '    ' + token;
+ if rest <> '' then textOut := textOut + ' ' + rest;
+
+ Result := true;
+end;
+
+
+function asmout_try_pseudo_branch_lines(const line: string; const size: integer; out lines: _strArray): Boolean;
+(*----------------------------------------------------------------------------*)
+(*----------------------------------------------------------------------------*)
+var body, token, rest: string;
+  splitPos: integer;
+  shortMnemonic, skipMnemonic, skipLabel: string;
+
+  function asmout_branch_mnemonic(const pseudoMnemonic: string): string;
+  begin
+   if pseudoMnemonic = 'JEQ' then Result := 'BEQ' else
+    if pseudoMnemonic = 'JNE' then Result := 'BNE' else
+     if pseudoMnemonic = 'JPL' then Result := 'BPL' else
+      if pseudoMnemonic = 'JMI' then Result := 'BMI' else
+       if pseudoMnemonic = 'JCC' then Result := 'BCC' else
+        if pseudoMnemonic = 'JCS' then Result := 'BCS' else
+         if pseudoMnemonic = 'JVC' then Result := 'BVC' else
+          if pseudoMnemonic = 'JVS' then Result := 'BVS' else
+           Result := '';
+  end;
+
+  function asmout_inverted_branch_mnemonic(const branchMnemonic: string): string;
+  begin
+   if branchMnemonic = 'BEQ' then Result := 'BNE' else
+    if branchMnemonic = 'BNE' then Result := 'BEQ' else
+     if branchMnemonic = 'BPL' then Result := 'BMI' else
+      if branchMnemonic = 'BMI' then Result := 'BPL' else
+       if branchMnemonic = 'BCC' then Result := 'BCS' else
+        if branchMnemonic = 'BCS' then Result := 'BCC' else
+         if branchMnemonic = 'BVC' then Result := 'BVS' else
+          if branchMnemonic = 'BVS' then Result := 'BVC' else
+           Result := '';
+  end;
+begin
+ Result := false;
+ lines := Default(_strArray);
+
+ body := asmout_strip_comment(line);
+ if body = '' then exit;
+ if Pos(':', body) > 0 then exit;
+
+ splitPos := 1;
+ while (splitPos <= Length(body)) and not(body[splitPos] in [' ', #9]) do inc(splitPos);
+
+ token := UpperCase(Copy(body, 1, splitPos-1));
+ rest := Trim(Copy(body, splitPos, Length(body)));
+
+ if (token = 'JEQ') or (token = 'JNE') or (token = 'JPL') or (token = 'JMI') or
+    (token = 'JCC') or (token = 'JCS') or (token = 'JVC') or (token = 'JVS') then begin
+  if rest = '' then exit;
+
+  shortMnemonic := asmout_branch_mnemonic(token);
+  if shortMnemonic = '' then exit;
+
+  if size = 2 then
+   asmout_append_line(lines, '    ' + shortMnemonic + ' ' + rest)
+  else begin
+   skipMnemonic := asmout_inverted_branch_mnemonic(shortMnemonic);
+   if skipMnemonic = '' then exit;
+
+   skipLabel := asmout_next_label_name;
+   asmout_append_line(lines, '    ' + skipMnemonic + ' ' + skipLabel);
+   asmout_append_line(lines, '    JMP ' + rest);
+   asmout_append_line(lines, skipLabel);
+  end;
+
+  Result := true;
+ end;
+end;
+
+
+procedure asmout_emit_org(const address: integer);
+(*----------------------------------------------------------------------------*)
+(*----------------------------------------------------------------------------*)
+begin
+ if not(asmout_enabled and asmout_open) then exit;
+ if address < 0 then exit;
+
+ if not(asmout_has_org) or (asmout_org <> address) then begin
+  if asmout_has_org then writeln(asmout);
+  writeln(asmout, '    ORG ' + asmout_hex(cardinal(address), asmout_address_digits(address)));
+  asmout_org := address;
+  asmout_has_org := true;
+ end;
+end;
+
+
+function asmout_bytes_text(const data: t256byt; const count: byte): string;
+(*----------------------------------------------------------------------------*)
+(*----------------------------------------------------------------------------*)
+var idx: integer;
+begin
+ Result := '.BYTE ';
+
+ for idx := 0 to count-1 do begin
+  if idx > 0 then Result := Result + ', ';
+  Result := Result + asmout_hex(data[idx], 2);
+ end;
+end;
+
+
+function asmout_captured_bytes_text(const data: array of byte): string;
+(*----------------------------------------------------------------------------*)
+(*----------------------------------------------------------------------------*)
+var idx: integer;
+begin
+ Result := '.BYTE ';
+
+ for idx := 0 to High(data) do begin
+  if idx > 0 then Result := Result + ', ';
+  Result := Result + asmout_hex(data[idx], 2);
+ end;
+end;
+
+
+procedure asmout_emit_label(const name: string; const address: integer);
+(*----------------------------------------------------------------------------*)
+(*----------------------------------------------------------------------------*)
+begin
+ if not(asmout_enabled and asmout_open) then exit;
+ if name = '' then exit;
+
+ if asmout_skip_capture_active then begin
+  asmout_append_line(asmout_skip_capture_lines, asmout_display_label_name(name));
+  asmout_line_emitted := true;
+  exit;
+ end;
+
+ asmout_emit_org(address);
+ writeln(asmout, asmout_display_label_name(name));
+end;
+
+
+procedure asmout_emit_equ(const name: string; const value: integer);
+(*----------------------------------------------------------------------------*)
+(*----------------------------------------------------------------------------*)
+var digits: integer;
+begin
+ if not(asmout_enabled and asmout_open) then exit;
+ if asmout_pending_skip_active and not asmout_skip_capture_active then asmout_emit_pending_skip_raw;
+ if name = '' then exit;
+ if value < 0 then exit;
+
+ if value > $FFFF then digits := 6 else
+  if value > $FF then digits := 4 else digits := 2;
+
+ writeln(asmout, asmout_display_label_name(name) + ' = ' + asmout_hex(cardinal(value), digits));
+end;
+
+
+procedure asmout_emit_passthrough(const line: string);
+(*----------------------------------------------------------------------------*)
+(*----------------------------------------------------------------------------*)
+var textLine: string;
+begin
+ if not(asmout_enabled and asmout_open) then exit;
+
+ if asmout_skip_capture_active then begin
+  textLine := TrimRight(line);
+  if textLine = '' then exit;
+  asmout_append_line(asmout_skip_capture_lines, textLine);
+  asmout_line_emitted := true;
+  exit;
+ end;
+
+ if asmout_pending_skip_active then asmout_emit_pending_skip_raw;
+
+ textLine := TrimRight(line);
+ if textLine = '' then exit;
+
+ writeln(asmout, textLine);
+
+ asmout_line_emitted := true;
+end;
+
+
+procedure asmout_reset_data_capture;
+(*----------------------------------------------------------------------------*)
+(*----------------------------------------------------------------------------*)
+begin
+ asmout_data_active := false;
+ asmout_data_force_byte := false;
+ asmout_data_address := 0;
+ asmout_data_label := '';
+ asmout_data_source_line := '';
+ SetLength(asmout_data_bytes, 0);
+ SetLength(asmout_data_words, 0);
+end;
+
+
+procedure asmout_begin_data_capture(const address: integer; const labelName: string; const sourceLine: string = '');
+(*----------------------------------------------------------------------------*)
+(*----------------------------------------------------------------------------*)
+begin
+ asmout_reset_data_capture;
+
+ if not(asmout_enabled and asmout_open) then exit;
+ if address < 0 then exit;
+
+ asmout_data_active := true;
+ asmout_data_address := address;
+ asmout_data_label := labelName;
+ asmout_data_source_line := sourceLine;
+end;
+
+
+procedure asmout_capture_data_byte(const value: byte);
+(*----------------------------------------------------------------------------*)
+(*----------------------------------------------------------------------------*)
+var idx: integer;
+begin
+ if not asmout_data_active then exit;
+
+ idx := Length(asmout_data_bytes);
+ SetLength(asmout_data_bytes, idx+1);
+ asmout_data_bytes[idx] := value;
+end;
+
+
+procedure asmout_capture_data_word(const value: word);
+(*----------------------------------------------------------------------------*)
+(*----------------------------------------------------------------------------*)
+var idx: integer;
+begin
+ if not asmout_data_active then exit;
+ if asmout_data_force_byte then exit;
+
+ idx := Length(asmout_data_words);
+ SetLength(asmout_data_words, idx+1);
+ asmout_data_words[idx] := value;
+end;
+
+
+procedure asmout_capture_data(const war: cardinal; const tmp: string; const op_: char; const invers: byte);
+(*----------------------------------------------------------------------------*)
+(*----------------------------------------------------------------------------*)
+var idx: integer;
+    value: byte;
+begin
+ if not asmout_data_active then exit;
+
+ case op_ of
+   'A','V': begin
+     asmout_capture_data_byte(byte(war));
+     asmout_capture_data_byte(byte(war shr 8));
+     asmout_capture_data_word(word(war));
+    end;
+
+   'L','B': begin
+     asmout_data_force_byte := true;
+     asmout_capture_data_byte(byte(war));
+    end;
+
+   'H': begin
+     asmout_data_force_byte := true;
+     asmout_capture_data_byte(byte(war shr 8));
+    end;
+
+   'M': begin
+     asmout_data_force_byte := true;
+     asmout_capture_data_byte(byte(war shr 16));
+    end;
+
+   'G': begin
+     asmout_data_force_byte := true;
+     asmout_capture_data_byte(byte(war shr 24));
+    end;
+
+   'T','E': begin
+     asmout_data_force_byte := true;
+     asmout_capture_data_byte(byte(war));
+     asmout_capture_data_byte(byte(war shr 8));
+     asmout_capture_data_byte(byte(war shr 16));
+    end;
+
+   'F': begin
+     asmout_data_force_byte := true;
+     asmout_capture_data_byte(byte(war));
+     asmout_capture_data_byte(byte(war shr 8));
+     asmout_capture_data_byte(byte(war shr 16));
+     asmout_capture_data_byte(byte(war shr 24));
+    end;
+
+   'R': begin
+     asmout_data_force_byte := true;
+     asmout_capture_data_byte(byte(war shr 24));
+     asmout_capture_data_byte(byte(war shr 16));
+     asmout_capture_data_byte(byte(war shr 8));
+     asmout_capture_data_byte(byte(war));
+    end;
+
+   'C','D': begin
+     asmout_data_force_byte := true;
+
+     for idx := 1 to Length(tmp) do begin
+      value := Ord(tmp[idx]);
+
+      if op_='D' then value := ata2int(value);
+
+      inc(value, invers);
+      asmout_capture_data_byte(value);
+     end;
+    end;
+ end;
+end;
+
+
+procedure asmout_emit_data_capture;
+(*----------------------------------------------------------------------------*)
+(*----------------------------------------------------------------------------*)
+var idx: integer;
+    line: string;
+begin
+ if not asmout_data_active then exit;
+ if asmout_pending_skip_active and not asmout_skip_capture_active then asmout_emit_pending_skip_raw;
+ if Length(asmout_data_bytes) = 0 then begin
+  asmout_reset_data_capture;
+  exit;
+ end;
+
+ if asmout_data_label <> '' then begin
+  asmout_emit_label(asmout_data_label, asmout_data_address);
+  asmout_skip_next_label := true;
+ end else
+  asmout_emit_org(asmout_data_address);
+
+   if asmout_data_source_line <> '' then begin
+    line := asmout_data_source_line;
+   end else if not asmout_data_force_byte and (Length(asmout_data_words) > 0) and (Length(asmout_data_bytes) = Length(asmout_data_words) * 2) then begin
+  line := '    .WORD ';
+
+  for idx := 0 to High(asmout_data_words) do begin
+   if idx > 0 then line := line + ', ';
+   line := line + asmout_hex(asmout_data_words[idx], 4);
+  end;
+ end else begin
+  line := '    ' + asmout_captured_bytes_text(asmout_data_bytes);
+ end;
+
+ writeln(asmout, line);
+ asmout_org := asmout_data_address + Length(asmout_data_bytes);
+ asmout_line_emitted := true;
+
+ asmout_reset_data_capture;
+end;
+
+
+procedure asmout_emit_ins_bytes(const address: integer; const labelName: string; const data: m64kb; const count: integer; const note: string = '');
+(*----------------------------------------------------------------------------*)
+(*----------------------------------------------------------------------------*)
+var lineAddress, idx, outCount: integer;
+  buffer: t256byt;
+  lineNote: string;
+begin
+ if not(asmout_enabled and asmout_open) then exit;
+ if asmout_pending_skip_active and not asmout_skip_capture_active then asmout_emit_pending_skip_raw;
+ if count <= 0 then exit;
+
+ if labelName <> '' then begin
+  asmout_emit_label(labelName, address);
+  asmout_skip_next_label := true;
+ end else
+  asmout_emit_org(address);
+
+ lineAddress := address;
+ idx := 0;
+
+ while idx < count do begin
+  outCount := 0;
+
+  while (idx < count) and (outCount < 16) do begin
+   buffer[outCount] := data[idx];
+   inc(idx);
+   inc(outCount);
+  end;
+
+  lineNote := '';
+  if (lineAddress = address) and (note <> '') then lineNote := note;
+
+  asmout_emit_bytes(lineAddress, buffer, outCount, lineNote);
+  inc(lineAddress, outCount);
+ end;
+end;
+
+
+procedure asmout_emit_bytes(const address: integer; const data: t256byt; const count: byte; const note: string = '');
+(*----------------------------------------------------------------------------*)
+(*----------------------------------------------------------------------------*)
+var line: string;
+begin
+ if not(asmout_enabled and asmout_open) then exit;
+ if count = 0 then exit;
+
+ if asmout_skip_capture_active then begin
+  line := '    ' + asmout_bytes_text(data, count);
+
+  if note <> '' then line := line + '    ; ' + note;
+
+  asmout_append_line(asmout_skip_capture_lines, line);
+  inc(asmout_skip_capture_size, count);
+  asmout_line_emitted := true;
+  exit;
+ end;
+
+ asmout_emit_org(address);
+ line := '    ' + asmout_bytes_text(data, count);
+
+ if note <> '' then line := line + '    ; ' + note;
+
+ writeln(asmout, line);
+ asmout_org := address + count;
+ asmout_line_emitted := true;
+end;
+
+
+procedure asmout_emit_instruction(const address: integer; const sourceLine: string; const mne: int5);
+(*----------------------------------------------------------------------------*)
+(*----------------------------------------------------------------------------*)
+var line, note: string;
+  pseudoLines: _strArray;
+  captureSkip: Boolean;
+  branchMnemonic: string;
+begin
+ if not(asmout_enabled and asmout_open) then exit;
+ if mne.l = 0 then exit;
+
+ branchMnemonic := asmout_skip_branch_mnemonic(sourceLine);
+ if branchMnemonic <> '' then begin
+  asmout_pending_skip_active := true;
+  asmout_pending_skip_address := address;
+  asmout_pending_skip_size := mne.l;
+  asmout_pending_skip_branch := branchMnemonic;
+  asmout_pending_skip_source_line := asmout_strip_comment(sourceLine);
+  asmout_pending_skip_bytes := mne.h;
+  asmout_line_emitted := true;
+  exit;
+ end;
+
+ captureSkip := asmout_pending_skip_active;
+ if captureSkip then begin
+  asmout_skip_capture_active := true;
+  asmout_skip_capture_size := 0;
+  asmout_skip_capture_lines := Default(_strArray);
+ end;
+
+ if asmout_try_pseudo_branch_lines(sourceLine, mne.l, pseudoLines) then begin
+  asmout_emit_text_lines(address, pseudoLines, mne.l);
+ end else if asmout_try_instruction_text(sourceLine, line) then begin
+  pseudoLines := Default(_strArray);
+  asmout_append_line(pseudoLines, line);
+  asmout_emit_text_lines(address, pseudoLines, mne.l);
+ end else if asmout_try_macro_text(sourceLine, address, mne.l) then begin
+ end else begin
+  note := asmout_strip_comment(sourceLine);
+  asmout_emit_bytes(address, mne.h, mne.l, note);
+ end;
+
+ if captureSkip then begin
+  asmout_skip_capture_active := false;
+
+  if Length(asmout_skip_capture_lines) > 0 then
+   asmout_emit_skip_wrapped_lines(asmout_pending_skip_address, asmout_pending_skip_size + asmout_skip_capture_size, asmout_pending_skip_branch, asmout_skip_capture_lines)
+  else
+   asmout_emit_pending_skip_raw;
+
+  asmout_pending_skip_active := false;
+  asmout_pending_skip_address := 0;
+  asmout_pending_skip_size := 0;
+  asmout_pending_skip_branch := '';
+  asmout_pending_skip_source_line := '';
+  asmout_skip_capture_size := 0;
+  asmout_skip_capture_lines := Default(_strArray);
+ end;
 end;
 
 
@@ -2174,8 +3507,6 @@ begin
        txt:=lokal_name+txt;
 
        Result:=l_lab(txt);
-
-       if Result>=0 then exit;
       end;
 
      end;
@@ -2377,12 +3708,13 @@ begin
 
  t_lab[x].nam := tmp;
 
+ t_lab[x].bnk := ba;
+
 { if new_local then begin
   if t_lab[x].pas<>pass then t_lab[x].adr := ad;   // tylko pierwszy adres dla .LOCAL
  end else}
   t_lab[x].adr := ad;
 
- t_lab[x].bnk := ba;
  t_lab[x].blk := blok;
 
  t_lab[x].pas := pass;
@@ -2421,6 +3753,12 @@ begin
    if run_macro then tmp:=macro_nr+lokal_name+a else	// !!! nie remowac LOKAL_NAME !!!
     if proc then tmp:=proc_name+lokal_name+a else
      tmp:=lokal_name+a;
+
+    if asmout_enabled and (pass=pass_end) and not asmout_source_looks_like_assignment(old) and (label_type in ['V','P']) and (ba=bank) and (integer(ad)=adres) then
+     if asmout_skip_next_label then
+      asmout_skip_next_label := false
+     else
+      asmout_emit_label(tmp, integer(ad));
 
   s_lab( tmp, ad, ba, old, a[1], new_local );
 
@@ -3312,6 +4650,9 @@ begin
   end;
 
 
+ if asmout_data_active then asmout_capture_data(war, tmp, op_, invers);
+
+
   case op_ of
     'L','B':
          begin
@@ -3478,7 +4819,6 @@ begin
 
  if test then
   if (Result<0) and (pass=pass_end) then blad_und(old,a,5);
-
 end;
 
 
@@ -3589,10 +4929,15 @@ begin
           if not(hea) and not(loop_used) and not(FOX_ripit) and
              not(struct.use) and (adres>=0) then bank_adres(adres);
 
+           if asmout_enabled and (pass=pass_end) and (nul.l>0) and not(asmout_line_emitted) then
+            asmout_emit_bytes(adres, nul.h, nul.l);
+
           if nul.l>0 then begin
            data_out:=true;
            for i:=0 to nul.l-1 do save_dst(nul.h[i]);
           end;
+
+           asmout_line_emitted := false;
 
         end;
 
@@ -4775,6 +6120,7 @@ LOOP:
                          ReadEnum:=true;
 
                          war:=oblicz_wartosc_ogr(a,old,i);
+                         value:=true;
 
                          ReadEnum:=false;
 
@@ -7868,7 +9214,7 @@ procedure create_struct_data(var i: integer; var zm, ety: string; v: byte);
 (*----------------------------------------------------------------------------*)
 var _doo, _odd, k, idx: integer;
     war: Int64;
-    tmp: string;
+  tmp, sourceLineText: string;
 begin
            struct_used.use:=false;
 
@@ -7878,6 +9224,14 @@ begin
            k:=bank;
 
            save_lst('a');
+
+           if asmout_enabled and (pass=pass_end) then begin
+            sourceLineText := '';
+            if asmout_try_simple_data_source_line(zm, sourceLineText) then
+             asmout_begin_data_capture(_odd, asmout_resolve_label_name(ety), sourceLineText)
+            else
+             asmout_begin_data_capture(_odd, asmout_resolve_label_name(ety));
+           end;
 
            if v>=__byte then
             dec(v, __byteValue)
@@ -7930,6 +9284,9 @@ begin
 
            end;
 
+           if asmout_enabled and (pass=pass_end) then
+            asmout_emit_data_capture;
+
            save_lab(ety,cardinal(_odd),integer(_doo),zm);     // zapisujemy etykiete normalnie poza strukturą
 end;
 
@@ -7966,6 +9323,7 @@ if var_idx>0 then begin
 
    case t_var[i].typ of
     'V': begin
+          if t_var[i].zpv then asmout_skip_next_label := true;
           save_lab(txt,nul.i,bank,txt);
 
           if t_var[i].adr<0 then         // T_VAR[I].ADR<0 oznacza brak okreslonej wartosci
@@ -9416,9 +10774,10 @@ procedure get_maeData(var zm:string; var i:integer; const typ:char);
 (*----------------------------------------------------------------------------*)
 (*----------------------------------------------------------------------------*)
 var _odd, _doo, idx, j, tmp: integer;
-    txt, hlp: string;
+  txt, hlp, sourceLineText: string;
     v, war: byte;
     yes: Boolean;
+  asmoutCaptureActive: Boolean;
 
     par: _strArray;
 begin
@@ -9436,6 +10795,16 @@ begin
    data_out:=true;    // wymus pokazanie w pliku LST podczas wykonywania makra
 
    save_lst('a');
+
+  asmoutCaptureActive := asmout_enabled and (pass=pass_end) and yes;
+  if asmoutCaptureActive then begin
+   sourceLineText := '';
+   if asmout_try_simple_data_source_line(zm, sourceLineText) then
+    asmout_begin_data_capture(adres, '', sourceLineText)
+   else
+    asmout_begin_data_capture(adres, '');
+   asmout_data_force_byte := true;
+  end;
 
    SetLength(par, 1);
    get_parameters(i,zm,par,true);
@@ -9501,6 +10870,7 @@ begin
              inc(v, war);
 
              if yes then begin
+	      if asmoutCaptureActive then asmout_capture_data_byte(v);
 	      save_dst(v);
 
               inc(adres);
@@ -9513,9 +10883,17 @@ begin
              j:=1;  tmp := integer( oblicz_wartosc_noSPC(txt,zm,j,#0,'A') );
 
              if yes then
-              if typ = 'W' then
+              if typ = 'W' then begin
+	       if asmoutCaptureActive then begin
+	        asmout_capture_data_byte(byte(tmp));
+	        asmout_capture_data_byte(byte(tmp shr 8));
+	       end;
                save_dstW( tmp )
-              else begin
+              end else begin
+	       if asmoutCaptureActive then begin
+	        asmout_capture_data_byte(byte(tmp shr 8));
+	        asmout_capture_data_byte(byte(tmp));
+	       end;
                save_dst( byte(tmp shr 8) );   // hi
                save_dst( byte(tmp) );         // lo
               end;
@@ -9529,6 +10907,8 @@ begin
 
    end else
     blad(zm,58);		// np. '.by .len(temp)'
+
+    if asmoutCaptureActive then asmout_emit_data_capture;
 
 end;
 
@@ -10897,6 +12277,9 @@ LOOP:
   if enum.use then
    if (ety<>'') and (mne.l=0) then begin
 
+    if asmout_enabled and (pass=pass_end) then
+     asmout_emit_passthrough(zm);
+
     i:=1;
 
     get_parameters(i,zm,par,false);
@@ -11228,8 +12611,14 @@ JUMP:
 
    _doo:=integer( oblicz_wartosc_noSPC(zm,zm,i,#0,'A') );
 
+  if asmout_enabled and (pass=pass_end) and (etyArray<>'') then
+   asmout_skip_next_label := true;
+
    if etyArray<>'' then                   // nie bylo .ARRAY
     save_lab(ety,adres,bank,zm);          // .DS expression
+
+  if asmout_enabled and (pass=pass_end) and (etyArray<>'') then
+   asmout_emit_equ(asmout_resolve_label_name(etyArray), integer(adres));
 
    if dreloc.sdx or dreloc.use then begin
 
@@ -11715,6 +13104,9 @@ JUMP:
      if ety<>'' then blad(zm,38) else
       if not(proc) then blad(zm,39) else begin
 
+     if asmout_enabled and (pass=pass_end) then
+      asmout_emit_passthrough(zm);
+
        save_lst(' ');
 
        oddaj_var;
@@ -11748,6 +13140,11 @@ JUMP:
           save_lst('a');
           txt:=zm; zapisz_lst(txt);
           bez_lst:=true;
+
+          if asmout_enabled and (pass=pass_end) then begin
+           asmout_emit_org(adres);
+           asmout_emit_passthrough(zm);
+          end;
 
           label_type:='P';
 
@@ -12079,7 +13476,33 @@ JUMP:
 
 //         for idx:=_odd to _doo-1 do writeln(t_mac[idx],' | '); halt;
 
+         if asmout_enabled and (pass=pass_end) and asmout_pending_skip_active then begin
+          asmout_skip_capture_active := true;
+          asmout_skip_capture_size := 0;
+          asmout_skip_capture_lines := Default(_strArray);
+          asmout_pending_skip_active := false;
+         end;
+
          analizuj_mem(_odd,_doo, zm,a,old_str, idx,idx+1, false);
+
+         if asmout_enabled and (pass=pass_end) and asmout_skip_capture_active then begin
+          asmout_skip_capture_active := false;
+
+          if Length(asmout_skip_capture_lines) > 0 then
+           asmout_emit_skip_wrapped_lines(asmout_pending_skip_address, asmout_pending_skip_size + asmout_skip_capture_size, asmout_pending_skip_branch, asmout_skip_capture_lines)
+          else begin
+           asmout_pending_skip_active := true;
+           asmout_emit_pending_skip_raw;
+          end;
+
+          asmout_pending_skip_active := false;
+          asmout_pending_skip_address := 0;
+          asmout_pending_skip_size := 0;
+          asmout_pending_skip_branch := '';
+          asmout_pending_skip_source_line := '';
+          asmout_skip_capture_size := 0;
+          asmout_skip_capture_lines := Default(_strArray);
+         end;
 
          if not(FOX_ripit) then bez_lst:=true;
 
@@ -12781,6 +14204,9 @@ JUMP:
         if macro_rept_if_test then
          if enum.use then blad(zm,122) else begin
 
+           if asmout_enabled and (pass=pass_end) then
+            asmout_emit_passthrough(zm);
+
            if ety='' then ety:=get_lab(i,zm, true);
 
            if pass=0 then reserved_word(ety,zm);
@@ -12821,6 +14247,9 @@ JUMP:
         if ety<>'' then blad(zm,38) else
          if macro_rept_if_test then
           if not(enum.use) then blad(zm,55) else begin
+
+       if asmout_enabled and (pass=pass_end) then
+        asmout_emit_passthrough(zm);
 
            txt:=lokal_name;
            SetLength(txt, length(txt)-1);
@@ -13056,6 +14485,9 @@ JUMP:
 
          t_var[_doo].adr:=zpvar;
          t_var[_doo].zpv:=true;
+
+           if asmout_enabled and (pass=pass_end) then
+            asmout_emit_equ(t_var[_doo].nam, zpvar);
 
          if zpvar+t_var[_doo].cnt*t_var[_doo].siz>256 then
           blad(zm,0)
@@ -13453,6 +14885,9 @@ JUMP:
       else
        save_lab(ety,idx,bank,zm);      // etykieta w aktualnym zasiegu
 
+      if (pass = pass_end) then
+       asmout_emit_equ(asmout_resolve_label_name(ety), idx);
+
 
       run_macro     := old_run_macro;
 
@@ -13702,6 +15137,9 @@ JUMP:
              end else
               save_lab(ety,cardinal(war),bank,zm);
 
+            if (pass = pass_end) and (etyArray <> '') and not undeclared then
+             asmout_emit_equ(asmout_resolve_label_name(ety), war);
+
 
             _odd:=load_lab(ety, true); // !!! TRUE
 
@@ -13791,6 +15229,9 @@ JUMP:
 
           inc(j,2);
          end;
+
+           if asmout_enabled and (pass=pass_end) then
+            asmout_emit_passthrough(tmpZM);
 
          data_out:=true;
 
@@ -13981,6 +15422,13 @@ JUMP:
                  hea_ofs.old := idx;
                  org_ofset := idx - hea_ofs.adr;
 
+                end;
+
+                if asmout_enabled and (pass=pass_end) and (Pos(',', asmout_strip_comment(zm)) > 0) then begin
+                 asmout_emit_passthrough(zm);
+                 asmout_has_org := true;
+                 asmout_org := idx;
+                 asmout_line_emitted := true;
                 end;
 
 
@@ -14883,20 +16331,40 @@ JUMP:
          end else                               // INS
          if (pass=pass_end) and (_doo>0) then begin
 
+           str := asmout_resolve_label_name(ety);
+           if asmout_enabled then
+            tmp := 'INS ' + GetFileName(txt) + ', +' + IntToStr(_odd) + ', ' + IntToStr(_doo)
+           else
+            tmp := '';
+
 //           if opt and opt_H=0 then first_org := true;
 
            if _odd>0 then seek(g,_odd);         // omin _ODD bajtow w pliku
 
            for j:=0 to (_doo div $10000)-1 do begin
             blockread(g, t_ins, $10000);        // odczytaj 64KB bajtow
-            for idx:=0 to $FFFF do save_dst( byte( t_ins[idx]+v ) );
+
+            for idx:=0 to $FFFF do t_ins[idx] := byte( t_ins[idx]+v );
+
+            if asmout_enabled then begin
+             asmout_emit_ins_bytes(adres + j*$10000, str, t_ins, $10000, tmp);
+             str := '';
+             tmp := '';
+            end;
+
+            for idx:=0 to $FFFF do save_dst( t_ins[idx] );
            end;
 
            j:=_doo mod $10000;                  // odczytaj pozostale bajty
 
            blockread(g, t_ins, j);
 
-           for idx:=0 to j-1 do save_dst( byte( t_ins[idx]+v ) );
+           for idx:=0 to j-1 do t_ins[idx] := byte( t_ins[idx]+v );
+
+           if asmout_enabled then
+            asmout_emit_ins_bytes(adres + (_doo div $10000)*$10000, str, t_ins, j, tmp);
+
+           for idx:=0 to j-1 do save_dst( t_ins[idx] );
          end;
 
          closefile(g);
@@ -15305,6 +16773,9 @@ JUMP:
 
    if mne.l<__equ then begin
 
+  if asmout_enabled and (pass=pass_end) and (mne.l>0) and not asmout_line_emitted then
+   asmout_emit_instruction(adres, zm, mne);
+
     nul:=mne;
 
     if (mne.l=0) and (ety='') then
@@ -15327,6 +16798,9 @@ JUMP:
 
    bez_lst:=false;
  end;
+
+  asmout_line_emitted := false;
+  asmout_skip_next_label := false;
 
 
  if runini.use then begin   // RUN, INI zachowają aktualny adres asemblacji
@@ -16009,6 +17483,11 @@ begin
 
    case UpCase(t[_i]) of
 
+      'A': begin
+        asmout_enabled := true;
+        if (_i < length(t)) and (t[_i+1]=':') then plik_asmout:=nowy_plik(plik_asmout, _i);
+       end;
+
     'C': case_used    := true;
     'P': full_name    := true;
     'S': silent       := true;
@@ -16185,6 +17664,7 @@ begin
  if plik_mac = '' then plik_mac := path + NewFileExt(name,'mac');
  if plik_h   = '' then plik_h   := path + NewFileExt(name,'h');
  if plik_hm  = '' then plik_hm  := path + NewFileExt(name,'hea');
+ if asmout_enabled and (plik_asmout = '') then plik_asmout := path + NewFileExt(name,'a65');
 
  t:=load_mes(mads_version);
 
@@ -16217,6 +17697,24 @@ begin
   writeln(hhh,'#ifndef _'+name+'_ASM_H_');
   writeln(hhh,'#define _'+name+'_ASM_H_');
   writeln(hhh)
+ end;
+
+ if asmout_enabled then begin
+  WriteAccessFile(plik_asmout); AssignFile(asmout,plik_asmout); FileMode:=1; Rewrite(asmout);
+  writeln(asmout, '; MADS simple assembler output prototype');
+  writeln(asmout, '; Source: ' + GetFileName(plik_asm));
+  writeln(asmout);
+  asmout_open := true;
+  asmout_has_org := false;
+  asmout_line_emitted := false;
+    asmout_pending_skip_active := false;
+    asmout_skip_capture_active := false;
+    asmout_pending_skip_address := 0;
+    asmout_pending_skip_size := 0;
+    asmout_skip_capture_size := 0;
+    asmout_pending_skip_branch := '';
+    asmout_pending_skip_source_line := '';
+    asmout_skip_capture_lines := Default(_strArray);
  end;
 
  WriteAccessFile(plik_obj); Assignfile(dst,plik_obj); FileMode:=1; Rewrite(dst,1);
@@ -16284,6 +17782,19 @@ begin
 
  binary_file.use:=false;
  plik_asm:='';
+ asmout_enabled:=false;
+ asmout_open:=false;
+ asmout_has_org:=false;
+ asmout_line_emitted:=false;
+ asmout_pending_skip_active:=false;
+ asmout_skip_capture_active:=false;
+ asmout_org:=0;
+ asmout_pending_skip_address:=0;
+ asmout_pending_skip_size:=0;
+ asmout_skip_capture_size:=0;
+ asmout_pending_skip_branch:='';
+ asmout_pending_skip_source_line:='';
+ asmout_skip_capture_lines:=Default(_strArray);
  status:=0;
 
 (*----------------------------------------------------------------------------*)

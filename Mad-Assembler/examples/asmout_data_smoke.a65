@@ -1,0 +1,10 @@
+; MADS simple assembler output prototype
+; Source: asmout_data_smoke.asm
+
+    ORG $2000
+BYTES
+    .BYTE $01, $02, $03, $44
+WORDS
+    .WORD $1234, $5678
+MIXED
+    .BYTE $41, $42, $BC, $9A

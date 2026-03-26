@@ -1,0 +1,67 @@
+; MADS simple assembler output prototype
+; Source: Boot.asm
+
+SECTORS_SIZE = $80
+MAIN_START = $0800
+MAIN_END = $BFFF
+MAIN_SIZE = $B800
+MAIN_SECTOR1 = $02
+MAIN_SECTORS = $0170
+MAIN_JMP = $BFE0
+SECTOR_COUNTER = $80
+	opt h-f+
+    ORG $0700
+LOAD_ADDRESS
+    .WORD $0001
+    .WORD $0700
+    .WORD $FFFF
+    LDA #$ff
+    STA $d301
+    LDA #0
+    STA $41
+    LDA #1
+    STA $301
+    LDA #'R'
+    STA $302
+    LDA #<main_start
+    STA $304
+    LDA #>main_start
+    STA $304+1
+    LDA #<main_sector1
+    STA $30a
+    LDA #>main_sector1
+    STA $30a+1
+    LDA #<main_sectors
+    STA sector_counter
+    LDA #>main_sectors
+    STA sector_counter+1
+    STA sector_counter
+LOAD
+    JSR $e453
+    BMI error
+    CLC
+    LDA $304
+    ADC sectors_size
+    STA $304
+    LDA $304+1
+    ADC sectors_size+1
+    STA $304+1
+    INC $30a
+    BNE __ASMOUT_1
+    INC $30a+1
+__ASMOUT_1
+    LDA sector_counter
+    BNE __ASMOUT_2
+    DEC sector_counter+1
+__ASMOUT_2
+    DEC sector_counter
+    LDA sector_counter
+    ORA sector_counter+1
+    STA 712
+    BNE load
+    JMP main_jmp
+ERROR
+    JMP $e477
+
+    ORG $077F
+    .BYTE $00

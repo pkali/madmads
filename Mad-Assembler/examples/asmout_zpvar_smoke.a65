@@ -1,0 +1,9 @@
+; MADS simple assembler output prototype
+; Source: asmout_zpvar_smoke.asm
+
+TEMP = $80
+PTR = $81
+    ORG $2000
+    LDA temp
+    LDA ptr
+    RTS

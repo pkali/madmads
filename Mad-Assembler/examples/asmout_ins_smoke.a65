@@ -1,0 +1,8 @@
+; MADS simple assembler output prototype
+; Source: asmout_ins_smoke.asm
+
+    ORG $2000
+BLOB
+    .BYTE $01, $02, $FF, $50, $51, $52    ; INS asmout_ins_smoke.bin, +0, 6
+SHIFTED
+    .BYTE $02, $FF, $50    ; INS asmout_ins_smoke.bin, +1, 3
