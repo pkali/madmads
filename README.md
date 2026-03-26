@@ -1,4 +1,4 @@
-### Madson - MADS with a simple assembler output
+### MadMads - MADS with a simple assembler output
 
 ## Working goal
 

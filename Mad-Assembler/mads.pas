@@ -1932,6 +1932,33 @@ var body, originalBody, token, commentText: string;
   idx, splitPos, colonPos: integer;
   hadLeadingLabel: Boolean;
 
+    function asmout_normalize_simple_data_directive(const lineValue: string): string;
+    var directivePos, afterDotPos: integer;
+      prefix, suffix, directiveToken, normalizedToken: string;
+  begin
+   Result := lineValue;
+
+   directivePos := Pos('.', Result);
+   if directivePos = 0 then exit;
+
+   afterDotPos := directivePos + 1;
+   while (afterDotPos <= Length(Result)) and (Result[afterDotPos] in ['A'..'Z', 'a'..'z']) do inc(afterDotPos);
+
+  directiveToken := UpperCase(Copy(Result, directivePos, afterDotPos - directivePos));
+  normalizedToken := '';
+
+  if directiveToken = '.BY' then
+   normalizedToken := '.BYTE'
+  else if directiveToken = '.WO' then
+   normalizedToken := '.WORD'
+  else
+   exit;
+
+   prefix := Copy(Result, 1, directivePos - 1);
+   suffix := Copy(Result, afterDotPos, Length(Result));
+  Result := prefix + normalizedToken + suffix;
+  end;
+
   function asmout_is_simple_data_directive(const bodyValue: string): Boolean;
   var directiveToken: string;
     tokenEnd: integer;
@@ -1944,6 +1971,7 @@ var body, originalBody, token, commentText: string;
    Result := (directiveToken = '.BYTE') or
       (directiveToken = '.BY') or
       (directiveToken = '.WORD') or
+    (directiveToken = '.WO') or
       (directiveToken = '.LONG') or
       (directiveToken = '.DWORD');
   end;
@@ -1981,6 +2009,8 @@ begin
   if commentText <> '' then textLine := textLine + ' ' + commentText;
  end else
   textLine := TrimRight(line);
+
+ textLine := asmout_normalize_simple_data_directive(textLine);
 
  Result := textLine <> '';
 end;
