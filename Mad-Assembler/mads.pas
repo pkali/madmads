@@ -334,10 +334,14 @@ var
 
     asmout_enabled, asmout_open, asmout_has_org, asmout_line_emitted, asmout_skip_next_label: Boolean;
     asmout_pending_skip_active, asmout_skip_capture_active: Boolean;
+    asmout_remap_active: Boolean;
+    asmout_forced_split_pending: Boolean;
     asmout_org: integer;
     asmout_data_active, asmout_data_force_byte: Boolean;
     asmout_data_address: integer;
     asmout_generated_label_id: integer;
+    asmout_remap_logical_origin, asmout_remap_physical_origin: integer;
+    asmout_forced_split_address: integer;
     asmout_pending_skip_address, asmout_pending_skip_size, asmout_skip_capture_size: integer;
     asmout_pending_skip_branch, asmout_pending_skip_source_line: string;
     asmout_pending_skip_bytes: t256byt;
@@ -2607,6 +2611,8 @@ procedure asmout_emit_org(const address: integer); forward;
 procedure asmout_emit_label(const name: string; const address: integer); forward;
 procedure asmout_emit_bytes(const address: integer; const data: t256byt; const count: byte; const note: string = ''); forward;
 procedure asmout_emit_skip_wrapped_lines(const address: integer; const totalSize: integer; const branchMnemonic: string; const innerLines: _strArray); forward;
+function asmout_output_address(const address: integer): integer; forward;
+function asmout_output_end_address(const address, size: integer): integer; forward;
 function asmout_try_instruction_text(const line: string; out textOut: string): Boolean; forward;
 function asmout_try_pseudo_branch_lines(const line: string; const size: integer; out lines: _strArray): Boolean; forward;
 procedure asmout_emit_pending_skip_raw; forward;
@@ -2873,7 +2879,8 @@ begin
 
  writeln(asmout, skipLabel);
 
- asmout_org := address + totalSize;
+ asmout_org := asmout_output_end_address(address, totalSize);
+ asmout_forced_split_pending := false;
  asmout_line_emitted := true;
 end;
 
@@ -2899,7 +2906,8 @@ begin
 
  for idx := 0 to High(lines) do writeln(asmout, asmout_rewrite_line_text(lines[idx]));
 
- asmout_org := address + size;
+ asmout_org := asmout_output_end_address(address, size);
+ asmout_forced_split_pending := false;
  asmout_line_emitted := true;
 end;
 
@@ -3087,17 +3095,39 @@ begin
 end;
 
 
+function asmout_output_address(const address: integer): integer;
+(*----------------------------------------------------------------------------*)
+(*----------------------------------------------------------------------------*)
+begin
+ if asmout_remap_active then
+  Result := asmout_remap_physical_origin + (address - asmout_remap_logical_origin)
+ else
+  Result := address;
+end;
+
+
+function asmout_output_end_address(const address, size: integer): integer;
+(*----------------------------------------------------------------------------*)
+(*----------------------------------------------------------------------------*)
+begin
+ Result := asmout_output_address(address) + size;
+end;
+
+
 procedure asmout_emit_org(const address: integer);
 (*----------------------------------------------------------------------------*)
 (*----------------------------------------------------------------------------*)
+var outputAddress: integer;
 begin
  if not(asmout_enabled and asmout_open) then exit;
  if address < 0 then exit;
 
- if not(asmout_has_org) or (asmout_org <> address) then begin
+ outputAddress := asmout_output_address(address);
+
+ if not(asmout_has_org) or (asmout_org <> outputAddress) then begin
   if asmout_has_org then writeln(asmout);
-  writeln(asmout, '    ORG ' + asmout_hex(cardinal(address), asmout_address_digits(address)));
-  asmout_org := address;
+  writeln(asmout, '    ORG ' + asmout_hex(cardinal(outputAddress), asmout_address_digits(outputAddress)));
+  asmout_org := outputAddress;
   asmout_has_org := true;
  end;
 end;
@@ -3140,7 +3170,7 @@ end;
 
    writeln(asmout, reserveLine);
 
-   asmout_org := address + size;
+  asmout_org := asmout_output_end_address(address, size);
    asmout_line_emitted := true;
   end;
 
@@ -3176,9 +3206,24 @@ end;
 procedure asmout_emit_label(const name: string; const address: integer);
 (*----------------------------------------------------------------------------*)
 (*----------------------------------------------------------------------------*)
+var labelLine: string;
 begin
  if not(asmout_enabled and asmout_open) then exit;
  if name = '' then exit;
+
+ if asmout_remap_active then begin
+  labelLine := asmout_display_label_name(name) + ' = ' + asmout_hex(cardinal(address), asmout_address_digits(address));
+
+  if asmout_skip_capture_active then begin
+   asmout_append_line(asmout_skip_capture_lines, labelLine);
+   asmout_line_emitted := true;
+   exit;
+  end;
+
+  writeln(asmout, labelLine);
+  asmout_line_emitted := true;
+  exit;
+ end;
 
  if asmout_skip_capture_active then begin
   asmout_append_line(asmout_skip_capture_lines, asmout_display_label_name(name));
@@ -3388,6 +3433,32 @@ begin
   exit;
  end;
 
+ if asmout_remap_active then begin
+  if asmout_data_label <> '' then begin
+   asmout_emit_label(asmout_data_label, asmout_data_address);
+   asmout_skip_next_label := true;
+  end;
+
+  line := '    ' + asmout_captured_bytes_text(asmout_data_bytes);
+
+  if asmout_skip_capture_active then begin
+   asmout_append_line(asmout_skip_capture_lines, line);
+   inc(asmout_skip_capture_size, Length(asmout_data_bytes));
+   asmout_line_emitted := true;
+   asmout_reset_data_capture;
+   exit;
+  end;
+
+  asmout_emit_org(asmout_data_address);
+  writeln(asmout, line);
+  asmout_org := asmout_output_end_address(asmout_data_address, Length(asmout_data_bytes));
+  asmout_forced_split_pending := false;
+  asmout_line_emitted := true;
+
+  asmout_reset_data_capture;
+  exit;
+ end;
+
  if asmout_data_label <> '' then begin
   asmout_emit_label(asmout_data_label, asmout_data_address);
   asmout_skip_next_label := true;
@@ -3408,7 +3479,8 @@ begin
  end;
 
  writeln(asmout, line);
- asmout_org := asmout_data_address + Length(asmout_data_bytes);
+ asmout_org := asmout_output_end_address(asmout_data_address, Length(asmout_data_bytes));
+ asmout_forced_split_pending := false;
  asmout_line_emitted := true;
 
  asmout_reset_data_capture;
@@ -3478,7 +3550,8 @@ begin
  if note <> '' then line := line + '    ; ' + note;
 
  writeln(asmout, line);
- asmout_org := address + count;
+ asmout_org := asmout_output_end_address(address, count);
+ asmout_forced_split_pending := false;
  asmout_line_emitted := true;
 end;
 
@@ -3493,6 +3566,12 @@ var line, note: string;
 begin
  if not(asmout_enabled and asmout_open) then exit;
  if mne.l = 0 then exit;
+
+ if asmout_remap_active then begin
+  note := asmout_rewrite_repeat_counter_text(asmout_strip_comment(sourceLine), true);
+  asmout_emit_bytes(address, mne.h, mne.l, note);
+  exit;
+ end;
 
  branchMnemonic := asmout_skip_branch_mnemonic(sourceLine);
  if branchMnemonic <> '' then begin
@@ -15923,11 +16002,37 @@ JUMP:
 
                 end;
 
-                if asmout_enabled and (pass=pass_end) and (Pos(',', asmout_strip_comment(zm)) > 0) then begin
-                 asmout_emit_passthrough(zm);
-                 asmout_has_org := true;
-                 asmout_org := idx;
-                 asmout_line_emitted := true;
+                if asmout_enabled and (pass=pass_end) then begin
+                 if Pos(',', asmout_strip_comment(zm)) > 0 then begin
+                  if ((opt and opt_H) > 0) and asmout_has_org and (asmout_org = hea_ofs.adr) and (hea_ofs.adr > 0) and
+                     (not asmout_forced_split_pending or (asmout_forced_split_address <> hea_ofs.adr)) then begin
+                   writeln(asmout);
+                   writeln(asmout, '    ORG ' + asmout_hex(cardinal(hea_ofs.adr - 1), asmout_address_digits(hea_ofs.adr - 1)));
+                   asmout_org := hea_ofs.adr - 1;
+                   asmout_forced_split_pending := true;
+                   asmout_forced_split_address := hea_ofs.adr;
+                  end;
+
+                  asmout_remap_active := true;
+                  asmout_remap_logical_origin := idx;
+                  asmout_remap_physical_origin := hea_ofs.adr;
+                  asmout_emit_org(idx);
+                  asmout_line_emitted := true;
+                 end else if asmout_remap_active then begin
+                  if ((opt and opt_H) > 0) and asmout_has_org and (asmout_org = idx) and (idx > 0) and
+                     (not asmout_forced_split_pending or (asmout_forced_split_address <> idx)) then begin
+                   writeln(asmout);
+                   writeln(asmout, '    ORG ' + asmout_hex(cardinal(idx - 1), asmout_address_digits(idx - 1)));
+                   asmout_org := idx - 1;
+                   asmout_forced_split_pending := true;
+                   asmout_forced_split_address := idx;
+                  end;
+
+                  asmout_remap_active := false;
+                  asmout_emit_org(idx);
+                  asmout_line_emitted := true;
+                 end else
+                  asmout_remap_active := false;
                 end;
 
 
@@ -18207,7 +18312,12 @@ begin
   asmout_open := true;
   asmout_has_org := false;
   asmout_line_emitted := false;
+     asmout_remap_active := false;
+      asmout_forced_split_pending := false;
     asmout_generated_label_id := 0;
+     asmout_remap_logical_origin := 0;
+     asmout_remap_physical_origin := 0;
+      asmout_forced_split_address := 0;
     asmout_pending_skip_active := false;
     asmout_skip_capture_active := false;
     asmout_pending_skip_address := 0;
