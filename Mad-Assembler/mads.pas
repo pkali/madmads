@@ -2940,6 +2940,48 @@ begin
 end;
 
 
+  procedure asmout_emit_space_reservation(const address, size: integer; const exprText: string; const labelName: string = ''; const emitEqu: Boolean = false);
+  (*----------------------------------------------------------------------------*)
+  (*----------------------------------------------------------------------------*)
+  var reserveExpr, labelText, reserveLine: string;
+  begin
+   if not(asmout_enabled and asmout_open) then exit;
+   if address < 0 then exit;
+   if size < 0 then exit;
+
+   reserveExpr := Trim(exprText);
+   if (reserveExpr = '') or (Pos('[', reserveExpr) > 0) or (Pos(']', reserveExpr) > 0) then
+    reserveExpr := IntToStr(size);
+
+   reserveExpr := asmout_rewrite_repeat_counter_text(reserveExpr, false);
+   reserveLine := asmout_rewrite_line_text('    ORG * + ' + reserveExpr);
+
+   if asmout_skip_capture_active then begin
+    if emitEqu and (labelName <> '') then begin
+     labelText := asmout_display_label_name(labelName) + ' = ' + asmout_hex(cardinal(address), asmout_address_digits(address));
+     asmout_append_line(asmout_skip_capture_lines, labelText);
+    end;
+
+    asmout_append_line(asmout_skip_capture_lines, reserveLine);
+    inc(asmout_skip_capture_size, size);
+    asmout_line_emitted := true;
+    exit;
+   end;
+
+   if asmout_pending_skip_active then asmout_emit_pending_skip_raw;
+
+   asmout_emit_org(address);
+
+   if emitEqu and (labelName <> '') then
+    writeln(asmout, asmout_display_label_name(labelName) + ' = ' + asmout_hex(cardinal(address), asmout_address_digits(address)));
+
+   writeln(asmout, reserveLine);
+
+   asmout_org := address + size;
+   asmout_line_emitted := true;
+  end;
+
+
 function asmout_bytes_text(const data: t256byt; const count: byte): string;
 (*----------------------------------------------------------------------------*)
 (*----------------------------------------------------------------------------*)
@@ -12907,6 +12949,7 @@ JUMP:
    omin_spacje(i,zm);
 
    etyArray:=ety;
+  str:=asmout_strip_comment(Copy(zm, i, Length(zm)));
 
    _doo:=integer( oblicz_wartosc_noSPC(zm,zm,i,#0,'A') );
 
@@ -12916,8 +12959,12 @@ JUMP:
    if etyArray<>'' then                   // nie bylo .ARRAY
     save_lab(ety,adres,bank,zm);          // .DS expression
 
-  if asmout_enabled and (pass=pass_end) and (etyArray<>'') then
-   asmout_emit_equ(asmout_resolve_label_name(etyArray), integer(adres));
+  if asmout_enabled and (pass=pass_end) then
+   if dreloc.sdx or dreloc.use then begin
+    if etyArray<>'' then
+     asmout_emit_equ(asmout_resolve_label_name(etyArray), integer(adres));
+   end else
+    asmout_emit_space_reservation(adres, _doo, str, asmout_resolve_label_name(etyArray), etyArray<>'');
 
    if dreloc.sdx or dreloc.use then begin
 
