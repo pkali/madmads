@@ -1,5 +1,6 @@
 .venv/
 .vscode/
+tmp/
 scorch_src/
 Mad-Assembler/mads
 Mad-Assembler/mads.o

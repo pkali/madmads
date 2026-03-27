@@ -1804,6 +1804,73 @@ begin
 end;
 
 
+function asmout_rewrite_enum_calls(const line: string): string;
+(*----------------------------------------------------------------------------*)
+(*----------------------------------------------------------------------------*)
+var body, commentText, enumName, enumItems, replacement, token: string;
+  commentPos, idx, nameEnd, itemIdx, itemStart, itemEnd, closePos: integer;
+begin
+ Result := line;
+ commentPos := Pos(';', Result);
+ if commentPos > 0 then begin
+  body := Copy(Result, 1, commentPos-1);
+  commentText := Copy(Result, commentPos, Length(Result));
+ end else begin
+  body := Result;
+  commentText := '';
+ end;
+
+ idx := 1;
+ while idx <= Length(body) do begin
+  if body[idx] <> '@' then begin
+   inc(idx);
+   continue;
+  end;
+
+  nameEnd := idx + 1;
+  while (nameEnd <= Length(body)) and (body[nameEnd] in ['A'..'Z', 'a'..'z', '0'..'9', '_', '@']) do inc(nameEnd);
+  if (nameEnd > Length(body)) or (body[nameEnd] <> '(') then begin
+   inc(idx);
+   continue;
+  end;
+
+  closePos := nameEnd + 1;
+  while (closePos <= Length(body)) and (body[closePos] <> ')') do inc(closePos);
+  if closePos > Length(body) then break;
+
+  enumName := Copy(body, idx, nameEnd-idx);
+  enumItems := Copy(body, nameEnd+1, closePos-nameEnd-1);
+  replacement := '(';
+  itemIdx := 1;
+
+  while itemIdx <= Length(enumItems) do begin
+   while (itemIdx <= Length(enumItems)) and (enumItems[itemIdx] in [' ', #9]) do inc(itemIdx);
+   itemStart := itemIdx;
+   while (itemIdx <= Length(enumItems)) and (enumItems[itemIdx] <> '|') do inc(itemIdx);
+   itemEnd := itemIdx - 1;
+   while (itemEnd >= itemStart) and (enumItems[itemEnd] in [' ', #9]) do dec(itemEnd);
+
+   token := '';
+   if itemEnd >= itemStart then token := Copy(enumItems, itemStart, itemEnd-itemStart+1);
+
+   if token <> '' then begin
+    if replacement <> '(' then replacement := replacement + '|';
+    replacement := replacement + enumName + '.' + token;
+   end;
+
+   if (itemIdx <= Length(enumItems)) and (enumItems[itemIdx] = '|') then inc(itemIdx);
+  end;
+
+  replacement := replacement + ')';
+  Delete(body, idx, closePos-idx+1);
+  Insert(replacement, body, idx);
+  inc(idx, Length(replacement));
+ end;
+
+ Result := body + commentText;
+end;
+
+
 function asmout_strip_comment(const line: string): string;
 (*----------------------------------------------------------------------------*)
 (*----------------------------------------------------------------------------*)
@@ -1971,9 +2038,7 @@ var body, originalBody, token, commentText: string;
    Result := (directiveToken = '.BYTE') or
       (directiveToken = '.BY') or
       (directiveToken = '.WORD') or
-    (directiveToken = '.WO') or
-      (directiveToken = '.LONG') or
-      (directiveToken = '.DWORD');
+    (directiveToken = '.WO');
   end;
 begin
  Result := false;
@@ -2011,6 +2076,7 @@ begin
   textLine := TrimRight(line);
 
  textLine := asmout_normalize_simple_data_directive(textLine);
+ textLine := asmout_rewrite_enum_calls(textLine);
 
  Result := textLine <> '';
 end;
@@ -2057,6 +2123,15 @@ begin
 
  indexSuffix := UpperCase(Copy(operand, commaPos+1, Length(operand)));
  Result := (indexSuffix = 'X') or (indexSuffix = 'Y');
+end;
+
+
+function asmout_is_simple_incdec_operand(const operand: string): Boolean;
+(*----------------------------------------------------------------------------*)
+(*----------------------------------------------------------------------------*)
+begin
+ Result := asmout_is_simple_macro_operand(operand) or
+           asmout_is_simple_indexed_macro_operand(operand);
 end;
 
 
@@ -2293,47 +2368,46 @@ begin
   asmout_append_line(lines, '    STA ' + thirdOperand);
  end else if macroName = 'MVA' then begin
   if operandCount <> 2 then exit;
-  if size < 4 then exit;
   if not(asmout_is_simple_mva_operand(firstOperand) and asmout_is_simple_mva_operand(secondOperand)) then exit;
 
-  if regAXY_opty then asmout_append_line(lines, '    OPT R-');
-  asmout_append_line(lines, '    LDA ' + firstOperand);
-  asmout_append_line(lines, '    STA ' + secondOperand);
-  if regAXY_opty then asmout_append_line(lines, '    OPT R+');
+    if ((firstOperand[1] = '#') or (firstOperand[1] = '<') or (firstOperand[1] = '>')) and (size <= 3) then
+     asmout_append_line(lines, '    STA ' + secondOperand)
+    else begin
+     asmout_append_line(lines, '    LDA ' + firstOperand);
+     asmout_append_line(lines, '    STA ' + secondOperand);
+    end;
  end else if macroName = 'MVX' then begin
   if operandCount <> 2 then exit;
-  if size < 4 then exit;
   if not(asmout_is_simple_mva_operand(firstOperand) and asmout_is_simple_mva_operand(secondOperand)) then exit;
 
-  if regAXY_opty then asmout_append_line(lines, '    OPT R-');
-  asmout_append_line(lines, '    LDX ' + firstOperand);
-  asmout_append_line(lines, '    STX ' + secondOperand);
-  if regAXY_opty then asmout_append_line(lines, '    OPT R+');
+    if ((firstOperand[1] = '#') or (firstOperand[1] = '<') or (firstOperand[1] = '>')) and (size <= 3) then
+     asmout_append_line(lines, '    STX ' + secondOperand)
+    else begin
+     asmout_append_line(lines, '    LDX ' + firstOperand);
+     asmout_append_line(lines, '    STX ' + secondOperand);
+    end;
  end else if macroName = 'MVY' then begin
   if operandCount <> 2 then exit;
-  if size < 4 then exit;
   if not(asmout_is_simple_mva_operand(firstOperand) and asmout_is_simple_mva_operand(secondOperand)) then exit;
 
-  if regAXY_opty then asmout_append_line(lines, '    OPT R-');
-  asmout_append_line(lines, '    LDY ' + firstOperand);
-  asmout_append_line(lines, '    STY ' + secondOperand);
-  if regAXY_opty then asmout_append_line(lines, '    OPT R+');
+    if ((firstOperand[1] = '#') or (firstOperand[1] = '<') or (firstOperand[1] = '>')) and (size <= 3) then
+     asmout_append_line(lines, '    STY ' + secondOperand)
+    else begin
+     asmout_append_line(lines, '    LDY ' + firstOperand);
+     asmout_append_line(lines, '    STY ' + secondOperand);
+    end;
  end else if macroName = 'MWA' then begin
   if operandCount <> 2 then exit;
   if not((asmout_is_simple_macro_operand(firstOperand) or asmout_is_simple_indexed_macro_operand(firstOperand)) and asmout_is_simple_macro_operand(secondOperand)) then exit;
 
-  if regAXY_opty then asmout_append_line(lines, '    OPT R-');
   asmout_append_line(lines, '    LDA ' + asmout_low_expr(firstOperand));
   asmout_append_line(lines, '    STA ' + secondOperand);
   if not asmout_can_reuse_immediate_word_load(firstOperand) then
    asmout_append_line(lines, '    LDA ' + asmout_high_expr(firstOperand));
   asmout_append_line(lines, '    STA ' + asmout_operand_next_byte(secondOperand));
-  if regAXY_opty then asmout_append_line(lines, '    OPT R+');
  end else if (macroName = 'MWX') or (macroName = 'MWY') then begin
   if operandCount <> 2 then exit;
   if not((asmout_is_simple_macro_operand(firstOperand) or asmout_is_simple_indexed_macro_operand(firstOperand)) and asmout_is_simple_macro_operand(secondOperand)) then exit;
-
-  if regAXY_opty then asmout_append_line(lines, '    OPT R-');
 
   if macroName = 'MWX' then begin
    asmout_append_line(lines, '    LDX ' + asmout_low_expr(firstOperand));
@@ -2348,8 +2422,6 @@ begin
     asmout_append_line(lines, '    LDY ' + asmout_high_expr(firstOperand));
    asmout_append_line(lines, '    STY ' + asmout_operand_next_byte(secondOperand));
   end;
-
-  if regAXY_opty then asmout_append_line(lines, '    OPT R+');
  end else if (macroName = 'ADW') or (macroName = 'SBW') then begin
   if not(operandCount in [2,3]) then exit;
   if thirdOperand = '' then thirdOperand := firstOperand;
@@ -2392,7 +2464,7 @@ begin
   end;
  end else if macroName = 'INW' then begin
   if operandCount <> 1 then exit;
-  if not asmout_is_simple_macro_operand(firstOperand) then exit;
+  if not asmout_is_simple_incdec_operand(firstOperand) then exit;
 
   skipLabel := asmout_next_label_name;
 
@@ -2402,7 +2474,7 @@ begin
   asmout_append_line(lines, skipLabel);
  end else if macroName = 'DEW' then begin
   if operandCount <> 1 then exit;
-  if not asmout_is_simple_macro_operand(firstOperand) then exit;
+  if not asmout_is_simple_incdec_operand(firstOperand) then exit;
 
   skipLabel := asmout_next_label_name;
 
@@ -2589,6 +2661,7 @@ begin
 
  textOut := '    ' + token;
  if rest <> '' then textOut := textOut + ' ' + rest;
+ textOut := asmout_rewrite_enum_calls(textOut);
 
  Result := true;
 end;
@@ -2730,16 +2803,22 @@ procedure asmout_emit_equ(const name: string; const value: integer);
 (*----------------------------------------------------------------------------*)
 (*----------------------------------------------------------------------------*)
 var digits: integer;
+  textValue: string;
 begin
  if not(asmout_enabled and asmout_open) then exit;
  if asmout_pending_skip_active and not asmout_skip_capture_active then asmout_emit_pending_skip_raw;
  if name = '' then exit;
- if value < 0 then exit;
 
- if value > $FFFF then digits := 6 else
-  if value > $FF then digits := 4 else digits := 2;
+ if value < 0 then
+  textValue := IntToStr(value)
+ else begin
+  if value > $FFFF then digits := 6 else
+   if value > $FF then digits := 4 else digits := 2;
 
- writeln(asmout, asmout_display_label_name(name) + ' = ' + asmout_hex(cardinal(value), digits));
+  textValue := asmout_hex(cardinal(value), digits);
+ end;
+
+ writeln(asmout, asmout_display_label_name(name) + ' = ' + textValue);
 end;
 
 
@@ -2762,6 +2841,8 @@ begin
 
  textLine := TrimRight(line);
  if textLine = '' then exit;
+
+ textLine := asmout_rewrite_enum_calls(textLine);
 
  writeln(asmout, textLine);
 
@@ -12307,9 +12388,6 @@ LOOP:
   if enum.use then
    if (ety<>'') and (mne.l=0) then begin
 
-    if asmout_enabled and (pass=pass_end) then
-     asmout_emit_passthrough(zm);
-
     i:=1;
 
     get_parameters(i,zm,par,false);
@@ -12342,6 +12420,9 @@ LOOP:
      branch:=true;                         // dla etykiet .ENUM nie ma relokowalnosci
 
      save_lab(ety, enum.val, bank, zm);
+
+    if asmout_enabled and (pass=pass_end) then
+     asmout_emit_equ(asmout_resolve_label_name(ety), integer(enum.val));
 
      bez_lst:=true;
 
@@ -14234,9 +14315,6 @@ JUMP:
         if macro_rept_if_test then
          if enum.use then blad(zm,122) else begin
 
-           if asmout_enabled and (pass=pass_end) then
-            asmout_emit_passthrough(zm);
-
            if ety='' then ety:=get_lab(i,zm, true);
 
            if pass=0 then reserved_word(ety,zm);
@@ -14277,9 +14355,6 @@ JUMP:
         if ety<>'' then blad(zm,38) else
          if macro_rept_if_test then
           if not(enum.use) then blad(zm,55) else begin
-
-       if asmout_enabled and (pass=pass_end) then
-        asmout_emit_passthrough(zm);
 
            txt:=lokal_name;
            SetLength(txt, length(txt)-1);
