@@ -25,6 +25,7 @@ BYTE_DIRECTIVE_RE = re.compile(r"^(\s*)\.BYTE\s+(.*)$", re.IGNORECASE)
 BINARY_LITERAL_RE = re.compile(r"(?<![A-Za-z0-9?._@])%([01]+)")
 CHAR_IMMEDIATE_RE = re.compile(r'#"([^"\\])"')
 NEGATIVE_IMMEDIATE_RE = re.compile(r'#-([0-9]+)\b')
+LITERAL_EQUATE_RE = re.compile(r"^([@A-Za-z?_][@A-Za-z0-9?._]*)\s*=\s*([^;]+?)\s*$")
 
 
 @dataclass(frozen=True)
@@ -43,6 +44,7 @@ class BackendSpec:
     rename_unsafe_symbols: bool = False
     normalize_symbol_case: bool = False
     fold_literal_equates_in_org: bool = False
+    hoist_zero_page_equates: bool = False
     symbol_is_safe: Callable[[str], bool] | None = None
     symbol_encoder: Callable[[str], str] | None = None
 
@@ -88,6 +90,7 @@ BACKENDS: dict[str, BackendSpec] = {
         wrap_byte_line_length=100,
         rename_unsafe_symbols=True,
         fold_literal_equates_in_org=True,
+        hoist_zero_page_equates=True,
         symbol_is_safe=omc_symbol_is_safe,
         symbol_encoder=encode_unsafe_symbol,
     ),
@@ -104,6 +107,7 @@ BACKENDS: dict[str, BackendSpec] = {
         rename_unsafe_symbols=True,
         normalize_symbol_case=True,
         fold_literal_equates_in_org=True,
+        hoist_zero_page_equates=True,
         symbol_is_safe=ca65_symbol_is_safe,
         symbol_encoder=encode_ca65_symbol,
     ),
@@ -164,7 +168,7 @@ def build_literal_equates(lines: Iterable[str]) -> dict[str, str]:
         if not line or line[:1] in {" ", "\t", ";"}:
             continue
 
-        match = re.match(r"^([@A-Za-z?_][@A-Za-z0-9?._]*)\s*=\s*([^;]+?)\s*$", line)
+        match = LITERAL_EQUATE_RE.match(line)
         if not match:
             continue
 
@@ -174,6 +178,57 @@ def build_literal_equates(lines: Iterable[str]) -> dict[str, str]:
             equates[name.upper()] = expr
 
     return equates
+
+
+def parse_literal_expr(expr: str) -> int | None:
+    expr = expr.strip()
+    if expr.startswith("$"):
+        return int(expr[1:], 16)
+    if expr.startswith("%"):
+        return int(expr[1:], 2)
+    if expr.isdigit():
+        return int(expr, 10)
+    return None
+
+
+def collect_hoisted_zero_page_equates(lines: list[str]) -> tuple[list[str], set[str]]:
+    by_name: dict[str, tuple[str, str] | None] = {}
+    ordered_names: list[str] = []
+
+    for line in lines:
+        if not line or line[:1] in {" ", "\t", ";"}:
+            continue
+
+        match = LITERAL_EQUATE_RE.match(line)
+        if not match:
+            continue
+
+        name, expr = match.groups()
+        value = parse_literal_expr(expr)
+        if value is None or value > 0xFF:
+            continue
+
+        key = name.upper()
+        entry = (name, expr.strip())
+        if key not in by_name:
+            by_name[key] = entry
+            ordered_names.append(key)
+            continue
+
+        if by_name[key] != entry:
+            by_name[key] = None
+
+    hoisted_lines: list[str] = []
+    hoisted_names: set[str] = set()
+    for key in ordered_names:
+        entry = by_name.get(key)
+        if entry is None:
+            continue
+        name, expr = entry
+        hoisted_lines.append(f"{name} = {expr}")
+        hoisted_names.add(key)
+
+    return hoisted_lines, hoisted_names
 
 
 def build_context(lines: list[str], backend: BackendSpec) -> RewriteContext:
@@ -250,8 +305,20 @@ def rewrite_binary_literals(code: str) -> str:
     return BINARY_LITERAL_RE.sub(repl, code)
 
 
+def atascii_to_internal_char(value: int) -> int:
+    if 0x20 <= value <= 0x5F:
+        return value - 0x20
+    if 0x00 <= value <= 0x1F:
+        return value + 0x40
+    return value
+
+
 def rewrite_char_immediates(code: str) -> str:
-    return CHAR_IMMEDIATE_RE.sub(lambda match: f"#'{match.group(1)}'", code)
+    def repl(match: re.Match[str]) -> str:
+        value = atascii_to_internal_char(ord(match.group(1)))
+        return f"#$%02X" % value
+
+    return CHAR_IMMEDIATE_RE.sub(repl, code)
 
 
 def rewrite_negative_byte_immediates(code: str) -> str:
@@ -365,8 +432,19 @@ def rewrite_lines(lines: list[str], backend: BackendSpec) -> RewriteResult:
     context = build_context(lines, backend)
     rewritten: list[str] = []
     wrapped_byte_lines = 0
+    hoisted_zero_page_lines: list[str] = []
+    hoisted_zero_page_names: set[str] = set()
+
+    if backend.hoist_zero_page_equates:
+        hoisted_zero_page_lines, hoisted_zero_page_names = collect_hoisted_zero_page_equates(lines)
+        rewritten.extend(rewrite_line(line, backend, context) for line in hoisted_zero_page_lines)
 
     for original_line in lines:
+        if hoisted_zero_page_names:
+            match = LITERAL_EQUATE_RE.match(original_line)
+            if match and match.group(1).upper() in hoisted_zero_page_names:
+                continue
+
         line = rewrite_line(original_line, backend, context)
         wrapped_lines = wrap_byte_line(line, backend.wrap_byte_line_length)
         if len(wrapped_lines) > 1:
