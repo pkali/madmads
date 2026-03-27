@@ -1728,6 +1728,7 @@ end;
 
 
 function fASC(const a: string): byte; forward;
+function l_lab(const a: string): integer; forward;
 
 
 function asmout_hex(const value: cardinal; const digits: integer): string;
@@ -1765,18 +1766,10 @@ begin
  Result := name;
  if name = '' then exit;
 
- if proc and (proc_name <> '') then
-  if Pos(proc_name, Result) = 1 then Delete(Result, 1, Length(proc_name));
-
  if Result = '' then exit;
 
  segmentStart := Length(Result);
  while (segmentStart > 1) and (Result[segmentStart-1] <> '.') do dec(segmentStart);
-
- if Result[segmentStart] = '?' then begin
-  Result := Copy(Result, segmentStart, MaxInt);
-  exit;
- end;
 
  idx := Length(Result);
  if Result[idx] <> '@' then exit;
@@ -1868,6 +1861,147 @@ begin
  end;
 
  Result := body + commentText;
+end;
+
+
+function asmout_find_scoped_reference(const name: string): string;
+(*----------------------------------------------------------------------------*)
+(*----------------------------------------------------------------------------*)
+var scope, candidate, normalizedName, normalizedScope: string;
+
+  procedure asmout_trim_scope(var value: string);
+  var trimIdx: integer;
+  begin
+   trimIdx := Length(value);
+   if (value <> '') and (trimIdx > 1) then begin
+    dec(trimIdx);
+    while (trimIdx >= 1) and (value[trimIdx] <> '.') do dec(trimIdx);
+    SetLength(value, trimIdx);
+   end;
+  end;
+
+  function asmout_find_in_scope(var value: string; const token: string): string;
+  begin
+   Result := '';
+
+   candidate := value + token;
+   if l_lab(candidate) >= 0 then begin
+    Result := candidate;
+    exit;
+   end;
+
+   while Pos('.', value) > 0 do begin
+    asmout_trim_scope(value);
+    candidate := value + token;
+    if l_lab(candidate) >= 0 then begin
+     Result := candidate;
+     exit;
+    end;
+   end;
+  end;
+begin
+ Result := '';
+ if name = '' then exit;
+
+ if (Pos('.', name) = 0) and ((name[1] = '?') or ((name[1] = '@') and (name <> '@'))) then begin
+  if opt and opt_C>0 then
+   Result := asmout_resolve_label_name(name)
+  else
+   Result := asmout_resolve_label_name(UpperCase(name));
+  exit;
+ end;
+
+ scope := proc_name + lokal_name;
+ Result := asmout_find_in_scope(scope, name);
+ if Result <> '' then exit;
+
+ if not(opt and opt_C>0) then begin
+  normalizedScope := UpperCase(proc_name + lokal_name);
+  normalizedName := UpperCase(name);
+  Result := asmout_find_in_scope(normalizedScope, normalizedName);
+ end;
+end;
+
+
+function asmout_rewrite_proc_references(const line: string): string;
+(*----------------------------------------------------------------------------*)
+(*----------------------------------------------------------------------------*)
+var idx, startIdx: integer;
+  current, rewritten: string;
+  quoteChar: char;
+
+  function asmout_is_ident_start(const ch: char): Boolean;
+  begin
+   Result := ch in ['A'..'Z', 'a'..'z', '_', '?', '@'];
+  end;
+
+  function asmout_is_ident_char(const ch: char): Boolean;
+  begin
+   Result := ch in ['A'..'Z', 'a'..'z', '0'..'9', '_', '?', '@', '.'];
+  end;
+
+  function asmout_leave_reference_unchanged(const token: string): Boolean;
+  var upperToken: string;
+  begin
+   if token = '' then exit(true);
+   if token = '@' then exit(true);
+   if Pos('.', token) > 0 then exit(true);
+
+   upperToken := UpperCase(token);
+   Result := (upperToken = 'A') or (upperToken = 'X') or (upperToken = 'Y');
+  end;
+begin
+ Result := line;
+ if not proc or (proc_name = '') then exit;
+
+ Result := '';
+ idx := 1;
+ quoteChar := #0;
+
+ while idx <= Length(line) do begin
+  if quoteChar <> #0 then begin
+   Result := Result + line[idx];
+   if line[idx] = quoteChar then quoteChar := #0;
+   inc(idx);
+   continue;
+  end;
+
+  if line[idx] in ['''', '"'] then begin
+   quoteChar := line[idx];
+   Result := Result + line[idx];
+   inc(idx);
+   continue;
+  end;
+
+  if not asmout_is_ident_start(line[idx]) then begin
+   Result := Result + line[idx];
+   inc(idx);
+   continue;
+  end;
+
+  startIdx := idx;
+  inc(idx);
+  while (idx <= Length(line)) and asmout_is_ident_char(line[idx]) do inc(idx);
+
+  current := Copy(line, startIdx, idx-startIdx);
+  if asmout_leave_reference_unchanged(current) then
+   rewritten := current
+  else begin
+   rewritten := asmout_find_scoped_reference(current);
+   if rewritten = '' then rewritten := current;
+  end;
+
+  Result := Result + rewritten;
+ end;
+end;
+
+
+function asmout_rewrite_line_text(const line: string): string;
+(*----------------------------------------------------------------------------*)
+(*----------------------------------------------------------------------------*)
+begin
+ Result := asmout_rewrite_enum_calls(line);
+ Result := asmout_rewrite_proc_references(Result);
 end;
 
 
@@ -2520,7 +2654,7 @@ begin
  writeln(asmout, '    ' + branchMnemonic + ' ' + skipLabel);
 
  for idx := 0 to High(innerLines) do
-  writeln(asmout, innerLines[idx]);
+  writeln(asmout, asmout_rewrite_line_text(innerLines[idx]));
 
  writeln(asmout, skipLabel);
 
@@ -2548,7 +2682,7 @@ begin
 
  asmout_emit_org(address);
 
- for idx := 0 to High(lines) do writeln(asmout, lines[idx]);
+ for idx := 0 to High(lines) do writeln(asmout, asmout_rewrite_line_text(lines[idx]));
 
  asmout_org := address + size;
  asmout_line_emitted := true;
@@ -2832,7 +2966,7 @@ begin
  if asmout_skip_capture_active then begin
   textLine := TrimRight(line);
   if textLine = '' then exit;
-  asmout_append_line(asmout_skip_capture_lines, textLine);
+  asmout_append_line(asmout_skip_capture_lines, asmout_rewrite_line_text(textLine));
   asmout_line_emitted := true;
   exit;
  end;
@@ -2842,7 +2976,7 @@ begin
  textLine := TrimRight(line);
  if textLine = '' then exit;
 
- textLine := asmout_rewrite_enum_calls(textLine);
+ textLine := asmout_rewrite_line_text(textLine);
 
  writeln(asmout, textLine);
 
@@ -13215,9 +13349,6 @@ JUMP:
      if ety<>'' then blad(zm,38) else
       if not(proc) then blad(zm,39) else begin
 
-     if asmout_enabled and (pass=pass_end) then
-      asmout_emit_passthrough(zm);
-
        save_lst(' ');
 
        oddaj_var;
@@ -13252,17 +13383,15 @@ JUMP:
           txt:=zm; zapisz_lst(txt);
           bez_lst:=true;
 
-          if asmout_enabled and (pass=pass_end) then begin
-           asmout_emit_org(adres);
-           asmout_emit_passthrough(zm);
-          end;
-
           label_type:='P';
 
           if not(proc) then
            ety:=lokal_name+ety
           else
            ety:=proc_name+ety;
+
+          if asmout_enabled and (pass=pass_end) then
+           asmout_emit_label(ety, adres);
 
           zapisz_lokal;
           lokal_name:='';
