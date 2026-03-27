@@ -2924,6 +2924,86 @@ begin
 end;
 
 
+function asmout_try_index_adjust_instruction_lines(const line: string; out lines: _strArray): Boolean;
+(*----------------------------------------------------------------------------*)
+(*----------------------------------------------------------------------------*)
+var body, token, rest, operand, commentText: string;
+  idx, splitPos, commentPos: integer;
+  mnemonicCode: byte;
+  indexReg, adjustSign: Char;
+
+  function asmout_mnemonic_code(const tokenValue: string): byte;
+  begin
+   Result := fASC(UpperCase(tokenValue));
+
+   if not(opt and opt_C>0) then begin
+    if Result in [57..92] then Result := 0;
+   end else
+    if Result in [96..118] then Result := 0;
+
+   if not(Result in [1..56, 57..92, 96..118]) then Result := 0;
+  end;
+
+begin
+ Result := false;
+ lines := Default(_strArray);
+
+ body := asmout_strip_comment(line);
+ if body = '' then exit;
+ if Pos(':', body) > 0 then exit;
+
+ splitPos := 1;
+ while (splitPos <= Length(body)) and not(body[splitPos] in [' ', #9]) do inc(splitPos);
+
+ token := Copy(body, 1, splitPos-1);
+ if (token = '') or (token[1] = '.') or (Length(token) <> 3) then exit;
+
+ mnemonicCode := asmout_mnemonic_code(token);
+ if mnemonicCode = 0 then exit;
+
+ idx := splitPos;
+ while (idx <= Length(body)) and (body[idx] in [' ', #9]) do inc(idx);
+ rest := Copy(body, idx, Length(body));
+ rest := Trim(asmout_rewrite_repeat_counter_text(rest, true));
+
+ if Length(rest) < 4 then exit;
+ if rest[Length(rest)-2] <> ',' then exit;
+
+ indexReg := UpCase(rest[Length(rest)-1]);
+ adjustSign := rest[Length(rest)];
+
+ if not(indexReg in ['X', 'Y']) then exit;
+ if not(adjustSign in ['+', '-']) then exit;
+
+ operand := Trim(Copy(rest, 1, Length(rest)-3));
+ if operand = '' then exit;
+
+ commentPos := Pos(';', line);
+ if commentPos > 0 then
+  commentText := TrimLeft(Copy(line, commentPos, Length(line)))
+ else
+  commentText := '';
+
+ asmout_append_line(lines, '    ' + UpperCase(token) + ' ' + operand + ',' + indexReg);
+ if commentText <> '' then
+  lines[High(lines)] := lines[High(lines)] + ' ' + commentText;
+
+ if indexReg = 'X' then begin
+  if adjustSign = '+' then
+   asmout_append_line(lines, '    INX')
+  else
+   asmout_append_line(lines, '    DEX');
+ end else begin
+  if adjustSign = '+' then
+   asmout_append_line(lines, '    INY')
+  else
+   asmout_append_line(lines, '    DEY');
+ end;
+
+ Result := true;
+end;
+
+
 function asmout_try_instruction_text(const line: string; out textOut: string): Boolean;
 (*----------------------------------------------------------------------------*)
 (*----------------------------------------------------------------------------*)
@@ -3593,6 +3673,8 @@ begin
  end;
 
  if asmout_try_pseudo_branch_lines(sourceLine, mne.l, pseudoLines) then begin
+  asmout_emit_text_lines(address, pseudoLines, mne.l);
+ end else if asmout_try_index_adjust_instruction_lines(sourceLine, pseudoLines) then begin
   asmout_emit_text_lines(address, pseudoLines, mne.l);
  end else if asmout_try_instruction_text(sourceLine, line) then begin
   pseudoLines := Default(_strArray);

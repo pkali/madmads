@@ -12,6 +12,7 @@ What users get today:
 - readable lowering of common helper pseudo-ops such as `MVA`, `MVX`, `MVY`, `MWA`, `MWX`, `MWY`, `ADB`, `SBB`, `ADW`, `SBW`, `CPW`, `INW`, and `DEW`,
 - structural lowering of skip-prefix pseudo-ops such as `SEQ`, `SNE`, `SPL`, `SMI`, `SCC`, `SCS`, `SVC`, and `SVS`,
 - lowering of MADS anonymous labels and `@+` / `@-` references to generated standard labels,
+- lowering of indexed post-adjust operands such as `ADDR,X+` and `ADDR,Y-` to plain instructions,
 - lowering of dual-address `ORG A,B` regions to plain `ORG` output with logical labels preserved as constants,
 - preservation of symbolic byte/word data where it is safe to do so,
 - normalized output directives such as `.BYTE` and `.WORD` even when the original source used shorthand forms like `.BY` or `.WO`,
