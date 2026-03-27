@@ -2005,6 +2005,57 @@ begin
 end;
 
 
+function asmout_rewrite_repeat_counter_text(const text: string; const preserveLeadingImmediate: Boolean): string;
+(*----------------------------------------------------------------------------*)
+(*----------------------------------------------------------------------------*)
+var idx, firstNonSpace: integer;
+  quoteChar: char;
+  replacedLeadingImmediate: Boolean;
+  counterText: string;
+begin
+ Result := text;
+ if ___rept_ile < 0 then exit;
+ if Pos('#', Result) = 0 then exit;
+
+ counterText := IntToStr(___rept_ile);
+ firstNonSpace := 1;
+ while (firstNonSpace <= Length(Result)) and (Result[firstNonSpace] in [' ', #9]) do inc(firstNonSpace);
+
+ idx := 1;
+ quoteChar := #0;
+ replacedLeadingImmediate := false;
+
+ while idx <= Length(Result) do begin
+  if quoteChar <> #0 then begin
+   if Result[idx] = quoteChar then quoteChar := #0;
+   inc(idx);
+   continue;
+  end;
+
+  if Result[idx] in ['''', '"'] then begin
+   quoteChar := Result[idx];
+   inc(idx);
+   continue;
+  end;
+
+  if Result[idx] = '#' then begin
+   if preserveLeadingImmediate and not replacedLeadingImmediate and (idx = firstNonSpace) then begin
+    replacedLeadingImmediate := true;
+    inc(idx);
+    continue;
+   end;
+
+   Delete(Result, idx, 1);
+   Insert(counterText, Result, idx);
+   inc(idx, Length(counterText));
+   continue;
+  end;
+
+  inc(idx);
+ end;
+end;
+
+
 function asmout_strip_comment(const line: string): string;
 (*----------------------------------------------------------------------------*)
 (*----------------------------------------------------------------------------*)
@@ -2210,6 +2261,7 @@ begin
   textLine := TrimRight(line);
 
  textLine := asmout_normalize_simple_data_directive(textLine);
+ textLine := asmout_rewrite_repeat_counter_text(textLine, false);
  textLine := asmout_rewrite_enum_calls(textLine);
 
  Result := textLine <> '';
@@ -2777,6 +2829,7 @@ begin
  idx := splitPos;
  while (idx <= Length(body)) and (body[idx] in [' ', #9]) do inc(idx);
  rest := Copy(body, idx, Length(body));
+ rest := asmout_rewrite_repeat_counter_text(rest, true);
 
  if Length(token) <> 3 then exit;
 
@@ -2976,6 +3029,7 @@ begin
  textLine := TrimRight(line);
  if textLine = '' then exit;
 
+ textLine := asmout_rewrite_repeat_counter_text(textLine, false);
  textLine := asmout_rewrite_line_text(textLine);
 
  writeln(asmout, textLine);
@@ -3261,7 +3315,7 @@ begin
   asmout_emit_text_lines(address, pseudoLines, mne.l);
  end else if asmout_try_macro_text(sourceLine, address, mne.l) then begin
  end else begin
-  note := asmout_strip_comment(sourceLine);
+  note := asmout_rewrite_repeat_counter_text(asmout_strip_comment(sourceLine), true);
   asmout_emit_bytes(address, mne.h, mne.l, note);
  end;
 
