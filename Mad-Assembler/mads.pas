@@ -2109,11 +2109,60 @@ end;
   end;
 
 
+  function asmout_rewrite_opt_line(const line: string): string;
+  (*----------------------------------------------------------------------------*)
+  (*----------------------------------------------------------------------------*)
+  var body, commentText, trimmedBody, optionsText, rewrittenOptions: string;
+    commentPos, idx: integer;
+  begin
+   Result := line;
+
+   commentPos := Pos(';', line);
+   if commentPos > 0 then begin
+    body := Copy(line, 1, commentPos-1);
+    commentText := Copy(line, commentPos, Length(line));
+   end else begin
+    body := line;
+    commentText := '';
+   end;
+
+   trimmedBody := Trim(body);
+   if Length(trimmedBody) < 3 then exit;
+   if UpperCase(Copy(trimmedBody, 1, 3)) <> 'OPT' then exit;
+
+   optionsText := Trim(Copy(trimmedBody, 4, Length(trimmedBody)));
+   if optionsText = '' then exit;
+
+   rewrittenOptions := '';
+   idx := 1;
+   while idx <= Length(optionsText) do begin
+    if (idx < Length(optionsText)) and (UpCase(optionsText[idx]) = 'R') and (optionsText[idx+1] in ['+', '-']) then begin
+     inc(idx, 2);
+     continue;
+    end;
+
+    rewrittenOptions := rewrittenOptions + optionsText[idx];
+    inc(idx);
+   end;
+
+   rewrittenOptions := Trim(rewrittenOptions);
+   if rewrittenOptions = '' then begin
+    Result := '';
+    exit;
+   end;
+
+   Result := '    OPT ' + rewrittenOptions;
+   if commentText <> '' then Result := Result + commentText;
+  end;
+
+
 function asmout_rewrite_line_text(const line: string): string;
 (*----------------------------------------------------------------------------*)
 (*----------------------------------------------------------------------------*)
 begin
- Result := asmout_rewrite_enum_calls(line);
+   Result := asmout_rewrite_opt_line(line);
+   if Result = '' then exit;
+   Result := asmout_rewrite_enum_calls(Result);
  Result := asmout_rewrite_proc_references(Result);
    Result := asmout_rewrite_anonymous_references(Result);
 end;
@@ -3187,6 +3236,7 @@ begin
 
  textLine := asmout_rewrite_repeat_counter_text(textLine, false);
  textLine := asmout_rewrite_line_text(textLine);
+ if Trim(textLine) = '' then exit;
 
  writeln(asmout, textLine);
 

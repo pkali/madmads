@@ -11,8 +11,10 @@ What users get today:
 - byte-exact Scorch round-trips for both Atari targets currently used for validation,
 - readable lowering of common helper pseudo-ops such as `MVA`, `MVX`, `MVY`, `MWA`, `MWX`, `MWY`, `ADB`, `SBB`, `ADW`, `SBW`, `CPW`, `INW`, and `DEW`,
 - structural lowering of skip-prefix pseudo-ops such as `SEQ`, `SNE`, `SPL`, `SMI`, `SCC`, `SCS`, `SVC`, and `SVS`,
+- lowering of MADS anonymous labels and `@+` / `@-` references to generated standard labels,
 - preservation of symbolic byte/word data where it is safe to do so,
-- normalized output directives such as `.BYTE` and `.WORD` even when the original source used shorthand forms like `.BY` or `.WO`.
+- normalized output directives such as `.BYTE` and `.WORD` even when the original source used shorthand forms like `.BY` or `.WO`,
+- removal of redundant `OPT R+` / `OPT R-` state from generated asmout.
 
 Current validation status:
 
@@ -411,9 +413,10 @@ Internally, the current prototype:
 
 - emits `ORG` on discontinuous address flow,
 - lowers `EQU` / `SET` / simple `.DEF` definitions to plain `NAME = value` lines,
-- preserves `OPT` and currently preserves `.PROC` / `.ENDP` for round-trip safety,
+- preserves `.PROC` / `.ENDP` for round-trip safety while dropping redundant `OPT R` directives,
 - lowers `INS` to explicit chunked `.BYTE` output,
 - lowers `.ZPVAR` allocations to plain symbol definitions,
+- lowers MADS anonymous labels and `@+` / `@-` style references to generated `__ASMOUT_ANON_*` labels,
 - preserves special label-kind metadata so helper forms such as `@enum(...)` survive expression evaluation,
 - prefers trustworthy source-text reuse for instructions and simple data lines, with fallback to synthesized `.BYTE` / `.WORD` output when necessary,
 - performs size-aware pseudo-branch lowering so the reassembled output keeps original MADS sizing.I am not sure about versioning yet...
@@ -432,7 +435,7 @@ Verified optimizer note:
 Important limitations of the current prototype:
 
 - it is intentionally conservative,
-- it still does not attempt to normalize or interpret non-standard directives for simpler assemblers; currently it preserves `OPT` as-is when present,
+- it still does not attempt to normalize or interpret non-standard directives for simpler assemblers beyond the cases already handled in asmout,
 - data lowering is still incomplete for cases beyond the current line-oriented `.BYTE` / `.WORD` reconstruction,
 - this is a hook-validation prototype, not the final backend.
 
@@ -443,7 +446,8 @@ Technical validation notes:
 - Scorch round-trips now close fully for both Atari targets with `-A` enabled,
 - `ADW` lowering matches original MADS sizing in the Scorch-dependent cases,
 - skip-prefix pseudo-ops `SEQ`, `SNE`, `SPL`, `SMI`, `SCC`, `SCS`, `SVC`, and `SVS` lower structurally to real `Bxx` skip wrappers without breaking macro-local labels or branch span,
-- the remaining `.lab` differences are mostly label-table noise from readable helper labels such as `__ASMOUT_*` and one macro-internal anonymous-label mismatch.
+- MADS anonymous labels are lowered to generated standard labels such as `__ASMOUT_ANON_*`,
+- the remaining `.lab` differences are mostly label-table noise from readable helper labels such as `__ASMOUT_*`.
 
 ## Suggested phase breakdown
 
