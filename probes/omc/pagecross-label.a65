@@ -1,0 +1,5 @@
+    *= $7FFE
+    .BYTE $EA
+    .BYTE $EA
+TARGET
+    RTS

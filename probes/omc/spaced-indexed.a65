@@ -1,0 +1,4 @@
+POKEY = $D200
+
+    *= $96B5
+    STA POKEY, X

@@ -26,6 +26,53 @@ BINARY_LITERAL_RE = re.compile(r"(?<![A-Za-z0-9?._@])%([01]+)")
 CHAR_IMMEDIATE_RE = re.compile(r'#"([^"\\])"')
 NEGATIVE_IMMEDIATE_RE = re.compile(r'#-([0-9]+)\b')
 LITERAL_EQUATE_RE = re.compile(r"^([@A-Za-z?_][@A-Za-z0-9?._]*)\s*=\s*([^;]+?)\s*$")
+LOW_PAGE_INDEXED_LITERAL_RE = re.compile(
+    r"^(\s*)(ADC|AND|ASL|CMP|DEC|EOR|INC|LDA|LDX|LDY|LSR|ORA|ROL|ROR|SBC|STA|STX|STY)\s+\$([0-9A-Fa-f]{1,4})\s*,\s*([XxYy])\s*$",
+    re.IGNORECASE,
+)
+SYMBOL_PLUS_LITERAL_RE = re.compile(
+    r"^([@A-Za-z?_][@A-Za-z0-9?._]*)(?:\s*([+-])\s*(\$[0-9A-Fa-f]+|%[01]+|\d+))?$"
+)
+OMC_INDEXED_INSTRUCTION_RE = re.compile(
+    r"^(\s*)(ADC|AND|ASL|CMP|DEC|EOR|INC|LDA|LDX|LDY|LSR|ORA|ROL|ROR|SBC|STA|STX|STY)\s+([^,]+?)\s*,\s*([XxYy])\s*$",
+    re.IGNORECASE,
+)
+
+OMC_ZERO_PAGE_X_OPCODE_MAP = {
+    "ADC": 0x75,
+    "AND": 0x35,
+    "ASL": 0x16,
+    "CMP": 0xD5,
+    "DEC": 0xD6,
+    "EOR": 0x55,
+    "INC": 0xF6,
+    "LDA": 0xB5,
+    "LDY": 0xB4,
+    "LSR": 0x56,
+    "ORA": 0x15,
+    "ROL": 0x36,
+    "ROR": 0x76,
+    "SBC": 0xF5,
+    "STA": 0x95,
+    "STY": 0x94,
+}
+
+OMC_ZERO_PAGE_Y_OPCODE_MAP = {
+    "LDX": 0xB6,
+    "STX": 0x96,
+}
+
+OMC_ABSOLUTE_Y_OPCODE_MAP = {
+    "ADC": 0x79,
+    "AND": 0x39,
+    "CMP": 0xD9,
+    "EOR": 0x59,
+    "LDA": 0xB9,
+    "LDX": 0xBE,
+    "ORA": 0x19,
+    "SBC": 0xF9,
+    "STA": 0x99,
+}
 
 
 @dataclass(frozen=True)
@@ -43,7 +90,9 @@ class BackendSpec:
     drop_opt_directives: bool = False
     rename_unsafe_symbols: bool = False
     normalize_symbol_case: bool = False
+    rewrite_angle_paren_expressions: bool = False
     fold_literal_equates_in_org: bool = False
+    fold_constant_org_arithmetic: bool = False
     hoist_zero_page_equates: bool = False
     symbol_is_safe: Callable[[str], bool] | None = None
     symbol_encoder: Callable[[str], str] | None = None
@@ -87,9 +136,12 @@ BACKENDS: dict[str, BackendSpec] = {
         org_keyword="*=",
         explicit_accumulator=True,
         rewrite_binary_literals=True,
+        rewrite_char_immediates=True,
         wrap_byte_line_length=100,
         rename_unsafe_symbols=True,
+        rewrite_angle_paren_expressions=True,
         fold_literal_equates_in_org=True,
+        fold_constant_org_arithmetic=True,
         hoist_zero_page_equates=True,
         symbol_is_safe=omc_symbol_is_safe,
         symbol_encoder=encode_unsafe_symbol,
@@ -297,12 +349,151 @@ def rewrite_org_expression(expr: str, literal_equates: dict[str, str]) -> str:
     return "".join(out)
 
 
+def fold_constant_org_expression(expr: str) -> str | None:
+    normalized = expr.strip()
+    if normalized == "":
+        return None
+
+    def replace_literal(match: re.Match[str]) -> str:
+        token = match.group(0)
+        value = parse_literal_expr(token)
+        if value is None:
+            return token
+        return str(value)
+
+    python_expr = re.sub(r"\$[0-9A-Fa-f]+|%[01]+|\d+", replace_literal, normalized)
+    if re.search(r"[^0-9\s()+\-*/]", python_expr):
+        return None
+
+    try:
+        value = eval(python_expr, {"__builtins__": {}}, {})
+    except Exception:
+        return None
+
+    if not isinstance(value, int):
+        return None
+    if value < 0:
+        return str(value)
+    return f"${value:X}"
+
+
 def rewrite_binary_literals(code: str) -> str:
     def repl(match: re.Match[str]) -> str:
         bits = match.group(1)
         return f"${int(bits, 2):X}"
 
     return BINARY_LITERAL_RE.sub(repl, code)
+
+
+def rewrite_angle_paren_expressions(code: str) -> str:
+    out: list[str] = []
+    idx = 0
+    length = len(code)
+    in_quote: str | None = None
+
+    while idx < length:
+        ch = code[idx]
+
+        if in_quote is not None:
+            out.append(ch)
+            if ch == in_quote:
+                in_quote = None
+            idx += 1
+            continue
+
+        if ch in {'"', "'"}:
+            in_quote = ch
+            out.append(ch)
+            idx += 1
+            continue
+
+        if ch in "<>" and idx + 1 < length and code[idx + 1] == "(":
+            out.append(ch)
+            out.append("[")
+            idx += 2
+            depth = 1
+            while idx < length:
+                inner = code[idx]
+                if inner == "(":
+                    depth += 1
+                    out.append(inner)
+                    idx += 1
+                    continue
+                if inner == ")":
+                    depth -= 1
+                    out.append("]" if depth == 0 else inner)
+                    idx += 1
+                    if depth == 0:
+                        break
+                    continue
+                out.append(inner)
+                idx += 1
+            continue
+
+        out.append(ch)
+        idx += 1
+
+    return "".join(out)
+
+
+def convert_parens_to_brackets(text: str) -> str:
+    out: list[str] = []
+    in_quote: str | None = None
+
+    for ch in text:
+        if in_quote is not None:
+            out.append(ch)
+            if ch == in_quote:
+                in_quote = None
+            continue
+
+        if ch in {'"', "'"}:
+            in_quote = ch
+            out.append(ch)
+            continue
+
+        if ch == '(':
+            out.append('[')
+            continue
+        if ch == ')':
+            out.append(']')
+            continue
+
+        out.append(ch)
+
+    return ''.join(out)
+
+
+def restore_mac65_indirect_addressing(mnemonic: str, operand: str) -> str:
+    restored = re.sub(
+        r"(^|\s)\[([^\[\]]+?)\]\s*,\s*([Yy])\b",
+        lambda match: f"{match.group(1)}({match.group(2)}),{match.group(3)}",
+        operand,
+    )
+    restored = re.sub(
+        r"(^|\s)\[([^\[\]]+?)\s*,\s*([Xx])\]",
+        lambda match: f"{match.group(1)}({match.group(2)},{match.group(3)})",
+        restored,
+    )
+
+    if mnemonic.upper() == "JMP":
+        match = re.fullmatch(r"(\s*)\[([^\[\]]+)\](\s*)", restored)
+        if match:
+            leading, inner, trailing = match.groups()
+            restored = f"{leading}({inner}){trailing}"
+
+    return restored
+
+
+def rewrite_mac65_expression_parentheses(code: str) -> str:
+    match = re.match(r"^(\s+)([A-Za-z.][A-Za-z0-9._]*)(.*)$", code)
+    if not match:
+        return convert_parens_to_brackets(code)
+
+    indent, mnemonic, operand = match.groups()
+    operand = convert_parens_to_brackets(operand)
+    operand = restore_mac65_indirect_addressing(mnemonic, operand)
+    return f"{indent}{mnemonic}{operand}"
 
 
 def atascii_to_internal_char(value: int) -> int:
@@ -329,14 +520,110 @@ def rewrite_negative_byte_immediates(code: str) -> str:
     return NEGATIVE_IMMEDIATE_RE.sub(repl, code)
 
 
+def normalize_indexed_operand_spacing(code: str) -> str:
+    return re.sub(r",\s+([XxYy])\b", r",\1", code)
+
+
+def resolve_emitted_literal(token: str, context: RewriteContext) -> int | None:
+    value_text = context.literal_equates.get(token.upper())
+    if value_text is not None:
+        return parse_literal_expr(value_text)
+
+    for original_name, emitted_name in context.symbol_map.items():
+        if emitted_name.upper() != token.upper():
+            continue
+        value_text = context.literal_equates.get(original_name)
+        if value_text is not None:
+            return parse_literal_expr(value_text)
+
+    return None
+
+
+def resolve_emitted_address_expr(expr: str, context: RewriteContext) -> int | None:
+    match = SYMBOL_PLUS_LITERAL_RE.fullmatch(expr.strip())
+    if not match:
+        return None
+
+    token, operator, offset_text = match.groups()
+    base = resolve_emitted_literal(token, context)
+    if base is None:
+        return None
+
+    if operator is None:
+        return base
+
+    offset = parse_literal_expr(offset_text)
+    if offset is None:
+        return None
+
+    if operator == '+':
+        return (base + offset) & 0xFFFF
+
+    return (base - offset) & 0xFFFF
+
+
+def parse_omc_indexed_operand(code: str, context: RewriteContext) -> tuple[str, str, str, int | None] | None:
+    match = LOW_PAGE_INDEXED_LITERAL_RE.match(code)
+    if match:
+        indent, mnemonic, address_text, index_register = match.groups()
+        return indent, mnemonic.upper(), index_register.upper(), int(address_text, 16)
+
+    symbolic_match = OMC_INDEXED_INSTRUCTION_RE.match(code)
+    if not symbolic_match:
+        return None
+
+    indent, mnemonic, expr, index_register = symbolic_match.groups()
+    return indent, mnemonic.upper(), index_register.upper(), resolve_emitted_address_expr(expr, context)
+
+
+def emit_omc_low_page_indexed(indent: str, mnemonic: str, index_register: str, address: int) -> str | None:
+    if index_register == "X":
+        opcode = OMC_ZERO_PAGE_X_OPCODE_MAP.get(mnemonic)
+        if opcode is None:
+            return None
+        return f"{indent}.BYTE ${opcode:02X},${address & 0xFF:02X}"
+
+    opcode = OMC_ZERO_PAGE_Y_OPCODE_MAP.get(mnemonic)
+    if opcode is not None:
+        return f"{indent}.BYTE ${opcode:02X},${address & 0xFF:02X}"
+
+    opcode = OMC_ABSOLUTE_Y_OPCODE_MAP.get(mnemonic)
+    if opcode is None:
+        return None
+
+    return f"{indent}.BYTE ${opcode:02X},${address & 0xFF:02X},$00"
+
+
+def rewrite_omc_low_page_indexed(code: str, context: RewriteContext) -> str:
+    parsed = parse_omc_indexed_operand(code, context)
+    if parsed is None:
+        return code
+
+    indent, mnemonic, index_register, address = parsed
+
+    if address is None or address > 0xFF:
+        return code
+
+    emitted = emit_omc_low_page_indexed(indent, mnemonic, index_register, address)
+    if emitted is None:
+        return code
+
+    return emitted
+
+
 def rewrite_bare_label(code: str, backend: BackendSpec) -> str:
+    stripped = code.strip()
+    if backend.name == "omc":
+        if code[:1] not in {' ', '\t'} and stripped and ' ' not in stripped and '\t' not in stripped:
+            if not stripped.startswith('.') and '=' not in stripped and ':' not in stripped:
+                return f"{stripped} = *"
+
     if not backend.require_label_colon:
         return code
 
     if code[:1] in {' ', '\t'}:
         return code
 
-    stripped = code.strip()
     if stripped == "":
         return code
     if any(ch.isspace() for ch in stripped):
@@ -361,9 +648,19 @@ def rewrite_line(line: str, backend: BackendSpec, context: RewriteContext) -> st
         expr = rewrite_org_expression(expr.lstrip(), context.literal_equates)
 
         relative_match = re.fullmatch(r"\*\s*\+\s*(.+)", expr)
+        if relative_match and backend.fold_constant_org_arithmetic:
+            folded_offset = fold_constant_org_expression(relative_match.group(1))
+            if folded_offset is not None:
+                expr = f"* + {folded_offset}"
+                relative_match = re.fullmatch(r"\*\s*\+\s*(.+)", expr)
+
         if relative_match and backend.reserve_keyword is not None:
             code = f"{indent}{backend.reserve_keyword} {relative_match.group(1)}"
         elif backend.org_keyword != "ORG":
+            if backend.fold_constant_org_arithmetic and relative_match is None:
+                folded_expr = fold_constant_org_expression(expr)
+                if folded_expr is not None:
+                    expr = folded_expr
             code = f"{indent}{backend.org_keyword} {expr}"
 
     if backend.explicit_accumulator:
@@ -380,12 +677,18 @@ def rewrite_line(line: str, backend: BackendSpec, context: RewriteContext) -> st
     code = rewrite_code_segment(code, context.symbol_map)
     code = rewrite_bare_label(code, backend)
 
+    if backend.rewrite_angle_paren_expressions:
+        code = rewrite_angle_paren_expressions(code)
+        code = rewrite_mac65_expression_parentheses(code)
     if backend.rewrite_binary_literals:
         code = rewrite_binary_literals(code)
     if backend.rewrite_char_immediates:
         code = rewrite_char_immediates(code)
     if backend.rewrite_negative_byte_immediates:
         code = rewrite_negative_byte_immediates(code)
+    if backend.name == "omc":
+        code = normalize_indexed_operand_spacing(code)
+        code = rewrite_omc_low_page_indexed(code, context)
 
     return code + comment
 

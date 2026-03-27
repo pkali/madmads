@@ -1,0 +1,6 @@
+BASE = $E8
+
+    *= $AC00
+    STA BASE-8,Y
+NEXT
+    RTS
