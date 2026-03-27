@@ -262,6 +262,11 @@ type
                cnt: byte;         // liczba odlozonych adresow w przod
               end;
 
+    asmoutAnonymousLabelEntry = record
+           sourceName: string;
+           generatedName: string;
+          end;
+
     _reptArray = array of reptTab;
 
 
@@ -337,6 +342,7 @@ var
     asmout_pending_skip_branch, asmout_pending_skip_source_line: string;
     asmout_pending_skip_bytes: t256byt;
     asmout_skip_capture_lines: _strArray;
+    asmout_anonymous_labels: array of asmoutAnonymousLabelEntry;
     asmout_data_label: string;
     asmout_data_source_line: string;
     asmout_data_bytes: array of byte;
@@ -1757,32 +1763,67 @@ begin
 end;
 
 
-function asmout_display_label_name(const name: string): string;
+function asmout_is_anonymous_label_name(const name: string): Boolean;
 (*----------------------------------------------------------------------------*)
 (*----------------------------------------------------------------------------*)
 var idx, segmentStart: integer;
-    anonymous: Boolean;
+begin
+ Result := false;
+ if name = '' then exit;
+
+ idx := Length(name);
+ if name[idx] <> '@' then exit;
+
+ segmentStart := idx;
+ while (segmentStart > 1) and (name[segmentStart-1] <> '.') do dec(segmentStart);
+ if segmentStart >= idx then exit;
+
+ Result := true;
+ while segmentStart < idx do begin
+  if not(name[segmentStart] in ['0'..'9']) then begin
+   Result := false;
+   exit;
+  end;
+
+  inc(segmentStart);
+ end;
+end;
+
+
+function asmout_generated_anonymous_label(const concreteName: string): string;
+(*----------------------------------------------------------------------------*)
+(*----------------------------------------------------------------------------*)
+var idx: integer;
+begin
+ Result := concreteName;
+ if not asmout_is_anonymous_label_name(concreteName) then exit;
+
+ for idx := 0 to High(asmout_anonymous_labels) do
+  if asmout_anonymous_labels[idx].sourceName = concreteName then begin
+   Result := asmout_anonymous_labels[idx].generatedName;
+   exit;
+  end;
+
+ inc(asmout_generated_label_id);
+ Result := '__ASMOUT_ANON_' + IntToStr(asmout_generated_label_id);
+
+ idx := Length(asmout_anonymous_labels);
+ SetLength(asmout_anonymous_labels, idx+1);
+ asmout_anonymous_labels[idx].sourceName := concreteName;
+ asmout_anonymous_labels[idx].generatedName := Result;
+end;
+
+
+function asmout_display_label_name(const name: string): string;
+(*----------------------------------------------------------------------------*)
+(*----------------------------------------------------------------------------*)
 begin
  Result := name;
  if name = '' then exit;
-
  if Result = '' then exit;
 
- segmentStart := Length(Result);
- while (segmentStart > 1) and (Result[segmentStart-1] <> '.') do dec(segmentStart);
-
- idx := Length(Result);
- if Result[idx] <> '@' then exit;
-
- segmentStart := idx;
- while (segmentStart > 1) and (Result[segmentStart-1] <> '.') do dec(segmentStart);
-
- anonymous := segmentStart < idx;
- while anonymous and (segmentStart < idx) do begin
-  if not(Result[segmentStart] in ['0'..'9']) then anonymous := false else inc(segmentStart);
- end;
-
- if anonymous then Result := '@';
+ if asmout_is_anonymous_label_name(Result) then
+  Result := asmout_generated_anonymous_label(Result);
 end;
 
 
@@ -1996,12 +2037,85 @@ begin
 end;
 
 
+  function asmout_rewrite_anonymous_references(const line: string): string;
+  (*----------------------------------------------------------------------------*)
+  (*----------------------------------------------------------------------------*)
+  var idx, startIdx, delta, code: integer;
+    token, concreteName, rewritten: string;
+    quoteChar: char;
+  begin
+   Result := '';
+   idx := 1;
+   quoteChar := #0;
+
+   while idx <= Length(line) do begin
+    if quoteChar <> #0 then begin
+     Result := Result + line[idx];
+     if line[idx] = quoteChar then quoteChar := #0;
+     inc(idx);
+     continue;
+    end;
+
+    if line[idx] = ';' then begin
+     Result := Result + Copy(line, idx, Length(line));
+     exit;
+    end;
+
+    if line[idx] in ['''', '"'] then begin
+     quoteChar := line[idx];
+     Result := Result + line[idx];
+     inc(idx);
+     continue;
+    end;
+
+    if line[idx] <> '@' then begin
+     Result := Result + line[idx];
+     inc(idx);
+     continue;
+    end;
+
+    startIdx := idx;
+    inc(idx);
+
+    if (idx <= Length(line)) and (line[idx] in ['+', '-']) then begin
+     inc(idx);
+     while (idx <= Length(line)) and (line[idx] in ['0'..'9']) do inc(idx);
+
+     token := Copy(line, startIdx, idx-startIdx);
+     concreteName := '';
+     delta := 0;
+
+     if Length(token) > 2 then begin
+      Val(Copy(token, 3, Length(token)-2), delta, code);
+      if code <> 0 then delta := 0;
+     end;
+
+     if token[2] = '-' then begin
+      concreteName := IntToStr(anonymous_idx-1-delta) + '@';
+     end else begin
+      concreteName := IntToStr(anonymous_idx+delta) + '@';
+     end;
+
+     rewritten := asmout_find_scoped_reference(concreteName);
+     if rewritten = '' then rewritten := asmout_resolve_label_name(concreteName);
+     if rewritten = '' then rewritten := concreteName;
+
+     Result := Result + asmout_display_label_name(rewritten);
+     continue;
+    end;
+
+    Result := Result + line[startIdx];
+   end;
+  end;
+
+
 function asmout_rewrite_line_text(const line: string): string;
 (*----------------------------------------------------------------------------*)
 (*----------------------------------------------------------------------------*)
 begin
  Result := asmout_rewrite_enum_calls(line);
  Result := asmout_rewrite_proc_references(Result);
+   Result := asmout_rewrite_anonymous_references(Result);
 end;
 
 
@@ -18043,6 +18157,7 @@ begin
   asmout_open := true;
   asmout_has_org := false;
   asmout_line_emitted := false;
+    asmout_generated_label_id := 0;
     asmout_pending_skip_active := false;
     asmout_skip_capture_active := false;
     asmout_pending_skip_address := 0;
@@ -18051,6 +18166,7 @@ begin
     asmout_pending_skip_branch := '';
     asmout_pending_skip_source_line := '';
     asmout_skip_capture_lines := Default(_strArray);
+    SetLength(asmout_anonymous_labels, 0);
  end;
 
  WriteAccessFile(plik_obj); Assignfile(dst,plik_obj); FileMode:=1; Rewrite(dst,1);
