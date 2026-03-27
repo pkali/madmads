@@ -46,6 +46,16 @@ cd ~/projects/madmads
 ./scripts/mads-roundtrip.sh 5200
 ```
 
+Postprocess generated asmout for another assembler dialect:
+
+```sh
+python3 scripts/asmout_postprocess.py --list-dialects
+python3 scripts/asmout_postprocess.py --dialect omc scorch800.a65 scorch800.omc.a65 --map-file scorch800.omc.map
+python3 scripts/asmout_postprocess.py --dialect ca65 scorch800.a65 scorch800.ca65.asm
+```
+
+The current `ca65` profile is intentionally conservative. It establishes the multi-backend framework and applies only syntax normalizations that are low-risk across dialects, while the `omc` profile remains the more aggressive compatibility pass.
+
 ## Working goal
 
 Extend MADS so it can emit not only binary output, but also a second output format: a plain 6502 assembly listing that represents the fully expanded program after macros, expressions, includes, and most MADS-specific conveniences have already been resolved.
