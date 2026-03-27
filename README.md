@@ -56,6 +56,22 @@ python3 scripts/asmout_postprocess.py --dialect ca65 scorch800.a65 scorch800.ca6
 
 The current `ca65` profile is intentionally conservative. It establishes the multi-backend framework and applies only syntax normalizations that are low-risk across dialects, while the `omc` profile remains the more aggressive compatibility pass.
 
+For a local `cc65` / `ca65` toolchain, use the wrapper script:
+
+```sh
+scripts/cc65-tool.sh ca65 --version
+scripts/cc65-tool.sh ld65 --version
+```
+
+If `cc65` is not installed system-wide, the wrapper also supports a repo-local extracted package under `tmp/cc65-local/root`.
+
+Probe the current `ca65` backend against Scorch:
+
+```sh
+scripts/ca65-probe.sh 800
+scripts/ca65-probe.sh 5200
+```
+
 ## Working goal
 
 Extend MADS so it can emit not only binary output, but also a second output format: a plain 6502 assembly listing that represents the fully expanded program after macros, expressions, includes, and most MADS-specific conveniences have already been resolved.
