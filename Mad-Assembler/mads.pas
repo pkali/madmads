@@ -1818,16 +1818,86 @@ begin
 end;
 
 
+function asmout_find_local_alias(const name: string): string;
+(*----------------------------------------------------------------------------*)
+(*----------------------------------------------------------------------------*)
+var labelIdx, madIdx: integer;
+  prefixUpper, candidateUpper, bestName: string;
+  labelAddress: cardinal;
+  labelBank: integer;
+begin
+ Result := '';
+ if name = '' then exit;
+
+ labelIdx := l_lab(name);
+ if labelIdx < 0 then exit;
+ if not t_lab[labelIdx].lid then exit;
+
+ labelAddress := t_lab[labelIdx].adr;
+ labelBank := t_lab[labelIdx].bnk;
+ prefixUpper := UpperCase(name) + '.';
+ bestName := '';
+
+ for madIdx := High(t_mad)-1 downto 0 do begin
+  if t_mad[madIdx].bnk <> labelBank then continue;
+  if t_mad[madIdx].adr <> labelAddress then continue;
+
+  candidateUpper := UpperCase(t_mad[madIdx].nam);
+  if Pos(prefixUpper, candidateUpper) <> 1 then continue;
+  if Length(t_mad[madIdx].nam) <= Length(name) then continue;
+
+  if (bestName = '') or (Length(t_mad[madIdx].nam) < Length(bestName)) then
+   bestName := t_mad[madIdx].nam;
+ end;
+
+ Result := bestName;
+end;
+
+
 function asmout_display_label_name(const name: string): string;
 (*----------------------------------------------------------------------------*)
 (*----------------------------------------------------------------------------*)
+var idx, nameLen, scanIdx: integer;
+  hash: cardinal;
+  hasBankDuplicate: Boolean;
+  aliasName: string;
 begin
  Result := name;
  if name = '' then exit;
  if Result = '' then exit;
 
  if asmout_is_anonymous_label_name(Result) then
-  Result := asmout_generated_anonymous_label(Result);
+  Result := asmout_generated_anonymous_label(Result)
+ else begin
+  idx := l_lab(Result);
+  if idx >= 0 then begin
+   aliasName := asmout_find_local_alias(Result);
+   if aliasName <> '' then begin
+    Result := aliasName;
+    idx := l_lab(Result);
+   end;
+
+   nameLen := Length(Result);
+
+   hash := $ffffffff;
+   scanIdx := 1;
+   while scanIdx <= nameLen do begin
+    hash := tCRC32[byte(hash) xor byte(Result[scanIdx])] xor (hash shr 8);
+    inc(scanIdx);
+   end;
+
+   hasBankDuplicate := false;
+   for scanIdx := High(t_lab)-1 downto 0 do
+    if (scanIdx <> idx) and (t_lab[scanIdx].len = nameLen) and (t_lab[scanIdx].nam = hash) then
+     if (t_lab[scanIdx].bnk < __id_param) and (t_lab[idx].bnk < __id_param) and (t_lab[scanIdx].bnk <> t_lab[idx].bnk) then begin
+      hasBankDuplicate := true;
+      break;
+     end;
+
+   if hasBankDuplicate and (t_lab[idx].bnk > 0) then
+    Result := Result + '.BANK' + Hex(t_lab[idx].bnk, 2);
+  end;
+ end;
 end;
 
 
@@ -1957,11 +2027,13 @@ begin
  end;
 
  scope := proc_name + lokal_name;
+ if run_macro then scope := macro_nr + scope;
  Result := asmout_find_in_scope(scope, name);
  if Result <> '' then exit;
 
  if not(opt and opt_C>0) then begin
   normalizedScope := UpperCase(proc_name + lokal_name);
+  if run_macro then normalizedScope := UpperCase(macro_nr) + normalizedScope;
   normalizedName := UpperCase(name);
   Result := asmout_find_in_scope(normalizedScope, normalizedName);
  end;
@@ -1986,19 +2058,38 @@ var idx, startIdx: integer;
   end;
 
   function asmout_leave_reference_unchanged(const token: string): Boolean;
-  var upperToken: string;
   begin
    if token = '' then exit(true);
    if token = '@' then exit(true);
-   if Pos('.', token) > 0 then exit(true);
+   Result := false;
+  end;
+
+  function asmout_previous_nonspace_char(const text: string; const position: integer): char;
+  var scanIdx: integer;
+  begin
+   Result := #0;
+   scanIdx := position - 1;
+   while scanIdx >= 1 do begin
+    if not(text[scanIdx] in [' ', #9]) then begin
+     Result := text[scanIdx];
+     exit;
+    end;
+
+    dec(scanIdx);
+   end;
+  end;
+
+  function asmout_is_index_register_token(const text, token: string; const position: integer): Boolean;
+  var upperToken: string;
+  begin
+   if Length(token) <> 1 then exit(false);
 
    upperToken := UpperCase(token);
-   Result := (upperToken = 'A') or (upperToken = 'X') or (upperToken = 'Y');
+   if (upperToken <> 'A') and (upperToken <> 'X') and (upperToken <> 'Y') then exit(false);
+
+   Result := asmout_previous_nonspace_char(text, position) = ',';
   end;
 begin
- Result := line;
- if not proc or (proc_name = '') then exit;
-
  Result := '';
  idx := 1;
  quoteChar := #0;
@@ -2029,11 +2120,17 @@ begin
   while (idx <= Length(line)) and asmout_is_ident_char(line[idx]) do inc(idx);
 
   current := Copy(line, startIdx, idx-startIdx);
-  if asmout_leave_reference_unchanged(current) then
+  if asmout_leave_reference_unchanged(current) or asmout_is_index_register_token(line, current, startIdx) then
    rewritten := current
   else begin
    rewritten := asmout_find_scoped_reference(current);
-   if rewritten = '' then rewritten := current;
+   if rewritten = '' then begin
+    if l_lab(current) >= 0 then
+     rewritten := asmout_display_label_name(current)
+    else
+     rewritten := current;
+   end else
+    rewritten := asmout_display_label_name(rewritten);
   end;
 
   Result := Result + rewritten;
@@ -3325,6 +3422,7 @@ begin
  if not(asmout_enabled and asmout_open) then exit;
  if asmout_pending_skip_active and not asmout_skip_capture_active then asmout_emit_pending_skip_raw;
  if name = '' then exit;
+ if (name[1] = '?') or (Pos('.?', name) > 0) then exit;
 
  if value < 0 then
   textValue := IntToStr(value)
@@ -4205,7 +4303,7 @@ begin
      writeln(hhh,'#define ',name,'_',tmp,' 0x',Hex(ad,4));
     end;
 
-    if list_mmm then begin
+    if list_mmm or asmout_enabled then begin
      i:=High(t_mad);             // SAVE_MAD
                                  //
      t_mad[i].nam:=a;            //
@@ -4398,6 +4496,8 @@ procedure save_lab(var a:string; const ad:cardinal; const ba:integer; var old:st
 (*  zapamietujemy etykiete, adres, bank                                       *)
 (*----------------------------------------------------------------------------*)
 var tmp: string;
+  emit_asmout_label: Boolean;
+  label_idx: integer;
 begin
 
  if a<>'' then begin			// !!! konieczny test
@@ -4420,13 +4520,24 @@ begin
     if proc then tmp:=proc_name+lokal_name+a else
      tmp:=lokal_name+a;
 
-    if asmout_enabled and (pass=pass_end) and not asmout_source_looks_like_assignment(old) and (label_type in ['V','P']) and (ba=bank) and (integer(ad)=adres) then
-     if asmout_skip_next_label then
-      asmout_skip_next_label := false
-     else
-      asmout_emit_label(tmp, integer(ad));
+    emit_asmout_label := asmout_enabled and (pass=pass_end) and not asmout_source_looks_like_assignment(old) and ((label_type in ['V','P']) or new_local) and (ba=bank) and (integer(ad)=adres);
 
   s_lab( tmp, ad, ba, old, a[1], new_local );
+
+  if emit_asmout_label then begin
+   label_idx := l_lab(tmp);
+   if new_local and (label_idx >= 0) and (t_lab[label_idx].add > 1) then
+    emit_asmout_label := false;
+
+    if emit_asmout_label then
+     if new_local then
+      asmout_emit_label(tmp, integer(ad))
+     else
+      if asmout_skip_next_label then
+      asmout_skip_next_label := false
+      else
+      asmout_emit_label(tmp, integer(ad));
+  end;
 
  end;
 

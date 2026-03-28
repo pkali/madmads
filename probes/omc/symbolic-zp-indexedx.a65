@@ -1,6 +1,0 @@
-ZPVAR = $80
-
-    *= $96C1
-    STY ZPVAR,X
-NEXT
-    RTS

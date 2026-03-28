@@ -20,12 +20,13 @@ fi
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "$script_dir/.." && pwd)"
-probe_dir="$repo_root/probes/omc"
 output_root="$repo_root/tmp/omc-regression"
+probe_dir="$output_root/probes"
 python_bin="$repo_root/.venv/bin/python"
 omc_bin="$repo_root/omc"
 
 mkdir -p "$output_root"
+mkdir -p "$probe_dir"
 
 if [[ ! -x "$omc_bin" ]]; then
   echo "missing OMC binary: $omc_bin" >&2
@@ -85,6 +86,60 @@ run_probe() {
   ) >"$rewritten_log" 2>&1
   echo "OK  $name"
 }
+
+write_probe() {
+  local name="$1"
+  local source_file="$probe_dir/$name.a65"
+
+  case "$name" in
+    pagecross-label)
+      cat >"$source_file" <<'EOF'
+    *= $7FFE
+    .BYTE $EA
+    .BYTE $EA
+TARGET
+    RTS
+EOF
+      ;;
+    symbolic-lowpage-absy)
+      cat >"$source_file" <<'EOF'
+BASE = $E8
+
+    *= $AC00
+    STA BASE-8,Y
+NEXT
+    RTS
+EOF
+      ;;
+    symbolic-zp-indexedx)
+      cat >"$source_file" <<'EOF'
+ZPVAR = $80
+
+    *= $96C1
+    STY ZPVAR,X
+NEXT
+    RTS
+EOF
+      ;;
+    spaced-indexed)
+      cat >"$source_file" <<'EOF'
+POKEY = $D200
+
+    *= $96B5
+    STA POKEY, X
+EOF
+      ;;
+    *)
+      echo "unknown probe: $name" >&2
+      exit 1
+      ;;
+  esac
+}
+
+write_probe pagecross-label
+write_probe symbolic-lowpage-absy
+write_probe symbolic-zp-indexedx
+write_probe spaced-indexed
 
 run_probe pagecross-label '^TARGET = \*$'
 run_probe symbolic-lowpage-absy '^\s*\.BYTE \$99,\$E0,\$00$'

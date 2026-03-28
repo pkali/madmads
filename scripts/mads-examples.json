@@ -53,26 +53,6 @@
       "source": "Mad-Assembler/examples/tetris.asm",
       "cwd": "Mad-Assembler/examples",
       "output": "tetris.obx"
-    }
-  ],
-  "assemble-only": [
-    {
-      "id": "while",
-      "source": "Mad-Assembler/examples/while.asm",
-      "cwd": "Mad-Assembler/examples",
-      "output": "while.obx"
-    },
-    {
-      "id": "hex-reg-var",
-      "source": "Mad-Assembler/examples/hex_reg_var.asm",
-      "cwd": "Mad-Assembler/examples",
-      "output": "hex_reg_var.obx"
-    },
-    {
-      "id": "input-string",
-      "source": "Mad-Assembler/examples/input_string.asm",
-      "cwd": "Mad-Assembler/examples",
-      "output": "input_string.obx"
     },
     {
       "id": "local",
@@ -109,6 +89,26 @@
       "source": "Mad-Assembler/examples/macro_proc_local.asm",
       "cwd": "Mad-Assembler/examples",
       "output": "macro_proc_local.obx"
+    }
+  ],
+  "assemble-only": [
+    {
+      "id": "while",
+      "source": "Mad-Assembler/examples/while.asm",
+      "cwd": "Mad-Assembler/examples",
+      "output": "while.obx"
+    },
+    {
+      "id": "hex-reg-var",
+      "source": "Mad-Assembler/examples/hex_reg_var.asm",
+      "cwd": "Mad-Assembler/examples",
+      "output": "hex_reg_var.obx"
+    },
+    {
+      "id": "input-string",
+      "source": "Mad-Assembler/examples/input_string.asm",
+      "cwd": "Mad-Assembler/examples",
+      "output": "input_string.obx"
     }
   ],
   "known-failing": [
