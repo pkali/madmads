@@ -93,58 +93,597 @@
   ],
   "assemble-only": [
     {
-      "id": "while",
-      "source": "Mad-Assembler/examples/while.asm",
-      "cwd": "Mad-Assembler/examples",
-      "output": "while.obx"
+      "id": "atari2600-colorsprites-main",
+      "source": "Mad-Assembler/examples/ATARI2600/colorsprites/main.asm",
+      "output": "out.obx"
+    },
+    {
+      "id": "atari2600-flag-main",
+      "source": "Mad-Assembler/examples/ATARI2600/flag/main.asm",
+      "output": "out.obx"
+    },
+    {
+      "id": "atari2600-missiles-main",
+      "source": "Mad-Assembler/examples/ATARI2600/missiles/main.asm",
+      "output": "out.obx"
+    },
+    {
+      "id": "atari2600-playfield-main",
+      "source": "Mad-Assembler/examples/ATARI2600/playfield/main.asm",
+      "output": "out.obx"
+    },
+    {
+      "id": "atari2600-rainbow-main",
+      "source": "Mad-Assembler/examples/ATARI2600/rainbow/main.asm",
+      "output": "out.obx"
+    },
+    {
+      "id": "atari2600-sprite-main",
+      "source": "Mad-Assembler/examples/ATARI2600/sprite/main.asm",
+      "output": "out.obx"
+    },
+    {
+      "id": "atari2600-timing-main",
+      "source": "Mad-Assembler/examples/ATARI2600/timing/main.asm",
+      "output": "out.obx"
+    },
+    {
+      "id": "atari7800-logo-logo",
+      "source": "Mad-Assembler/examples/ATARI7800/logo/logo.asm",
+      "output": "out.obx"
+    },
+    {
+      "id": "atari7800-sprite-sprite",
+      "source": "Mad-Assembler/examples/ATARI7800/sprite/sprite.asm",
+      "output": "out.obx"
+    },
+    {
+      "id": "atari7800-swing-swing",
+      "source": "Mad-Assembler/examples/ATARI7800/swing/swing.asm",
+      "output": "out.obx"
+    },
+    {
+      "id": "atari7800-usokoban-usokoban",
+      "source": "Mad-Assembler/examples/ATARI7800/uSokoban/uSokoban.asm",
+      "output": "out.obx"
+    },
+    {
+      "id": "disapplei",
+      "source": "Mad-Assembler/examples/DisAppleI.asm",
+      "output": "out.obx"
+    },
+    {
+      "id": "exloaderdebug",
+      "source": "Mad-Assembler/examples/ExLoaderDEBUG.asm",
+      "output": "out.obx"
+    },
+    {
+      "id": "joy2bplus-testj2b",
+      "source": "Mad-Assembler/examples/Joy2BPlus/TestJ2b.asm",
+      "output": "out.obx"
+    },
+    {
+      "id": "libraries-fp-example",
+      "source": "Mad-Assembler/examples/LIBRARIES/fp/example.asm",
+      "output": "out.obx"
+    },
+    {
+      "id": "libraries-graph-os-example",
+      "source": "Mad-Assembler/examples/LIBRARIES/graph_os/example.asm",
+      "output": "out.obx"
+    },
+    {
+      "id": "libraries-graphics-example",
+      "source": "Mad-Assembler/examples/LIBRARIES/graphics/example.asm",
+      "output": "out.obx"
+    },
+    {
+      "id": "libraries-stdio-example",
+      "source": "Mad-Assembler/examples/LIBRARIES/stdio/example.asm",
+      "output": "out.obx"
+    },
+    {
+      "id": "procedures-mem-detect-reloc",
+      "source": "Mad-Assembler/examples/PROCEDURES/@mem_detect_reloc.asm",
+      "output": "out.obx"
+    },
+    {
+      "id": "asmout-ins-smoke",
+      "source": "Mad-Assembler/examples/asmout_ins_smoke.asm",
+      "output": "out.obx"
+    },
+    {
+      "id": "asmout-zpvar-smoke",
+      "source": "Mad-Assembler/examples/asmout_zpvar_smoke.asm",
+      "output": "out.obx"
+    },
+    {
+      "id": "compression-aplib-test-apl",
+      "source": "Mad-Assembler/examples/compression/aplib/test_apl.asm",
+      "output": "out.obx"
+    },
+    {
+      "id": "compression-packfire-test",
+      "source": "Mad-Assembler/examples/compression/packfire/test.asm",
+      "output": "out.obx"
+    },
+    {
+      "id": "demoscene-16k-openletter-openlet",
+      "source": "Mad-Assembler/examples/demoscene/16K/OpenLetter/openlet.asm",
+      "output": "out.obx"
+    },
+    {
+      "id": "demoscene-256b-landscape-landscape",
+      "source": "Mad-Assembler/examples/demoscene/256B/LANDSCAPE/LANDSCAPE.ASM",
+      "output": "out.obx"
+    },
+    {
+      "id": "demoscene-256b-bars-bars",
+      "source": "Mad-Assembler/examples/demoscene/256B/bars/bars.asm",
+      "output": "out.obx"
+    },
+    {
+      "id": "demoscene-atari8bitbot-fire-fire",
+      "source": "Mad-Assembler/examples/demoscene/Atari8BitBot/fire/fire.asm",
+      "output": "out.obx"
+    },
+    {
+      "id": "demoscene-atari8bitbot-hscr-hscr",
+      "source": "Mad-Assembler/examples/demoscene/Atari8BitBot/hscr/hscr.asm",
+      "output": "out.obx"
+    },
+    {
+      "id": "demoscene-atari8bitbot-life-life",
+      "source": "Mad-Assembler/examples/demoscene/Atari8BitBot/life/life.asm",
+      "output": "out.obx"
+    },
+    {
+      "id": "demoscene-atari8bitbot-water-water",
+      "source": "Mad-Assembler/examples/demoscene/Atari8BitBot/water/water.asm",
+      "output": "out.obx"
+    },
+    {
+      "id": "demoscene-deform-deform",
+      "source": "Mad-Assembler/examples/demoscene/deform/deform.asm",
+      "output": "out.obx"
+    },
+    {
+      "id": "demoscene-glenches-glenches",
+      "source": "Mad-Assembler/examples/demoscene/glenches/glenches.asm",
+      "output": "out.obx"
+    },
+    {
+      "id": "detect-sdx",
+      "source": "Mad-Assembler/examples/detect_sdx.asm",
+      "output": "out.obx"
+    },
+    {
+      "id": "enum-call-smoke",
+      "source": "Mad-Assembler/examples/enum_call_smoke.asm",
+      "output": "out.obx"
+    },
+    {
+      "id": "file-header",
+      "source": "Mad-Assembler/examples/file_header.asm",
+      "output": "out.obx"
+    },
+    {
+      "id": "float",
+      "source": "Mad-Assembler/examples/float.asm",
+      "output": "out.obx"
+    },
+    {
+      "id": "foxdos",
+      "source": "Mad-Assembler/examples/foxdos.asm",
+      "output": "out.obx"
+    },
+    {
+      "id": "games-adventure-adventure",
+      "source": "Mad-Assembler/examples/games/adventure/adventure.asm",
+      "output": "out.obx"
+    },
+    {
+      "id": "games-cosmic-ark-cosmic",
+      "source": "Mad-Assembler/examples/games/cosmic_ark/cosmic.asm",
+      "output": "out.obx"
+    },
+    {
+      "id": "games-midnight-magic-midnight-magic",
+      "source": "Mad-Assembler/examples/games/midnight_magic/midnight_magic.asm",
+      "output": "out.obx"
+    },
+    {
+      "id": "games-rainbox-rainbox",
+      "source": "Mad-Assembler/examples/games/rainbox/RainboX.asm",
+      "output": "out.obx"
+    },
+    {
+      "id": "games-seaquest-seaquest",
+      "source": "Mad-Assembler/examples/games/seaquest/seaquest.asm",
+      "output": "out.obx"
+    },
+    {
+      "id": "games-smb-smb",
+      "source": "Mad-Assembler/examples/games/smb/smb.asm",
+      "output": "out.obx"
+    },
+    {
+      "id": "games-stampede-stampede",
+      "source": "Mad-Assembler/examples/games/stampede/stampede.asm",
+      "output": "out.obx"
+    },
+    {
+      "id": "games-star-raiders-starraiders",
+      "source": "Mad-Assembler/examples/games/star_raiders/StarRaiders.asm",
+      "output": "out.obx"
+    },
+    {
+      "id": "graphics-40x40-40x40",
+      "source": "Mad-Assembler/examples/graphics/40x40/40x40.asm",
+      "output": "out.obx"
+    },
+    {
+      "id": "graphics-mode-9-mode-9",
+      "source": "Mad-Assembler/examples/graphics/mode 9++/mode_9++.asm",
+      "output": "out.obx"
+    },
+    {
+      "id": "graphics-st2vbxe-st2vbxe",
+      "source": "Mad-Assembler/examples/graphics/st2vbxe/st2vbxe.asm",
+      "output": "out.obx"
+    },
+    {
+      "id": "graphics-ttd-ttd",
+      "source": "Mad-Assembler/examples/graphics/ttd/ttd.asm",
+      "output": "out.obx"
     },
     {
       "id": "hex-reg-var",
       "source": "Mad-Assembler/examples/hex_reg_var.asm",
-      "cwd": "Mad-Assembler/examples",
-      "output": "hex_reg_var.obx"
+      "output": "out.obx"
+    },
+    {
+      "id": "hscroll-2",
+      "source": "Mad-Assembler/examples/hscroll_2.asm",
+      "output": "out.obx"
+    },
+    {
+      "id": "hscroll-3",
+      "source": "Mad-Assembler/examples/hscroll_3.asm",
+      "output": "out.obx"
     },
     {
       "id": "input-string",
       "source": "Mad-Assembler/examples/input_string.asm",
-      "cwd": "Mad-Assembler/examples",
-      "output": "input_string.obx"
+      "output": "out.obx"
+    },
+    {
+      "id": "life",
+      "source": "Mad-Assembler/examples/life.asm",
+      "output": "out.obx"
+    },
+    {
+      "id": "local-lmb",
+      "source": "Mad-Assembler/examples/local_lmb.asm",
+      "output": "out.obx"
+    },
+    {
+      "id": "macro-rekurencja",
+      "source": "Mad-Assembler/examples/macro_rekurencja.asm",
+      "output": "out.obx"
+    },
+    {
+      "id": "mads-change-history",
+      "source": "Mad-Assembler/examples/mads_change_history.asm",
+      "output": "out.obx"
+    },
+    {
+      "id": "mandelbr8",
+      "source": "Mad-Assembler/examples/mandelbr8.asm",
+      "output": "out.obx"
+    },
+    {
+      "id": "mandelbrot-4col",
+      "source": "Mad-Assembler/examples/mandelbrot_4col.asm",
+      "output": "out.obx"
+    },
+    {
+      "id": "map-ram",
+      "source": "Mad-Assembler/examples/map_ram.asm",
+      "output": "out.obx"
+    },
+    {
+      "id": "math-fltpt65-fltpt65",
+      "source": "Mad-Assembler/examples/math/fltpt65/fltpt65.asm",
+      "output": "out.obx"
+    },
+    {
+      "id": "os2ram",
+      "source": "Mad-Assembler/examples/os2ram.asm",
+      "output": "out.obx"
+    },
+    {
+      "id": "players-cmc-player-relocator-cmc-player-reloc",
+      "source": "Mad-Assembler/examples/players/cmc_player_relocator/cmc_player_reloc.asm",
+      "output": "out.obx"
+    },
+    {
+      "id": "players-delta-player-dlt-player",
+      "source": "Mad-Assembler/examples/players/delta_player/dlt_player.asm",
+      "output": "out.obx"
+    },
+    {
+      "id": "players-inertia-player-3-7-iplayer",
+      "source": "Mad-Assembler/examples/players/inertia_player_3.7/iplayer.asm",
+      "output": "out.obx"
+    },
+    {
+      "id": "players-mpt-player-relocator-mpt-player-reloc",
+      "source": "Mad-Assembler/examples/players/mpt_player_relocator/mpt_player_reloc.asm",
+      "output": "out.obx"
+    },
+    {
+      "id": "players-sap-r-lzss-play-test",
+      "source": "Mad-Assembler/examples/players/sap-r_lzss/play_test.asm",
+      "output": "out.obx"
+    },
+    {
+      "id": "pokeymax-detect",
+      "source": "Mad-Assembler/examples/pokeymax/detect.asm",
+      "output": "out.obx"
+    },
+    {
+      "id": "rept",
+      "source": "Mad-Assembler/examples/rept.asm",
+      "output": "out.obx"
+    },
+    {
+      "id": "sprites-atari8bitmultiplayerdemo-player-1",
+      "source": "Mad-Assembler/examples/sprites/Atari8BitMultiPlayerDemo/Player_1.asm",
+      "output": "out.obx"
+    },
+    {
+      "id": "sprites-atari8bitmultiplayerdemo-player-1-1",
+      "source": "Mad-Assembler/examples/sprites/Atari8BitMultiPlayerDemo/Player_1_1.asm",
+      "output": "out.obx"
+    },
+    {
+      "id": "sprites-atari8bitmultiplayerdemo-player-2",
+      "source": "Mad-Assembler/examples/sprites/Atari8BitMultiPlayerDemo/Player_2.asm",
+      "output": "out.obx"
+    },
+    {
+      "id": "sprites-atari8bitmultiplayerdemo-player-2-1",
+      "source": "Mad-Assembler/examples/sprites/Atari8BitMultiPlayerDemo/Player_2_1.asm",
+      "output": "out.obx"
+    },
+    {
+      "id": "sprites-atari8bitmultiplayerdemo-player-3",
+      "source": "Mad-Assembler/examples/sprites/Atari8BitMultiPlayerDemo/Player_3.asm",
+      "output": "out.obx"
+    },
+    {
+      "id": "sprites-atari8bitmultiplayerdemo-player-4",
+      "source": "Mad-Assembler/examples/sprites/Atari8BitMultiPlayerDemo/Player_4.asm",
+      "output": "out.obx"
+    },
+    {
+      "id": "sprites-atari8bitmultiplayerdemo-player-5",
+      "source": "Mad-Assembler/examples/sprites/Atari8BitMultiPlayerDemo/Player_5.asm",
+      "output": "out.obx"
+    },
+    {
+      "id": "sprites-eor-chars-test",
+      "source": "Mad-Assembler/examples/sprites/eor_chars/test.asm",
+      "output": "out.obx"
+    },
+    {
+      "id": "sprites-shanti-2c-shape-shape",
+      "source": "Mad-Assembler/examples/sprites/shanti_2c/shape/shape.asm",
+      "output": "out.obx"
+    },
+    {
+      "id": "struct-enum",
+      "source": "Mad-Assembler/examples/struct_enum.asm",
+      "output": "out.obx"
+    },
+    {
+      "id": "test6502-illegal",
+      "source": "Mad-Assembler/examples/test6502_illegal.asm",
+      "output": "out.obx"
+    },
+    {
+      "id": "test65816",
+      "source": "Mad-Assembler/examples/test65816.asm",
+      "output": "out.obx"
+    },
+    {
+      "id": "test-illegal",
+      "source": "Mad-Assembler/examples/test_illegal.asm",
+      "output": "out.obx"
+    },
+    {
+      "id": "tetris-reloc",
+      "source": "Mad-Assembler/examples/tetris_reloc.asm",
+      "output": "out.obx"
+    },
+    {
+      "id": "udc",
+      "source": "Mad-Assembler/examples/udc.asm",
+      "output": "out.obx"
+    },
+    {
+      "id": "while",
+      "source": "Mad-Assembler/examples/while.asm",
+      "output": "out.obx"
+    },
+    {
+      "id": "xbios-example-xbios",
+      "source": "Mad-Assembler/examples/xbios/example/xbios.asm",
+      "output": "out.obx"
     }
   ],
   "known-failing": [
     {
+      "id": "atari7800-directmodescroll-directmodescroll",
+      "source": "Mad-Assembler/examples/ATARI7800/directmodescroll/directmodescroll.asm",
+      "output": "out.obx",
+      "expect_stage": "assemble-source"
+    },
+    {
+      "id": "atari7800-hello-helloworld",
+      "source": "Mad-Assembler/examples/ATARI7800/hello/helloworld.asm",
+      "output": "out.obx",
+      "expect_stage": "assemble-source"
+    },
+    {
+      "id": "libraries-clk-clk",
+      "source": "Mad-Assembler/examples/LIBRARIES/clk/clk.asm",
+      "output": "out.obx",
+      "expect_stage": "assemble-source"
+    },
+    {
+      "id": "libraries-io-example",
+      "source": "Mad-Assembler/examples/LIBRARIES/io/example.asm",
+      "output": "out.obx",
+      "expect_stage": "assemble-source"
+    },
+    {
+      "id": "command-line",
+      "source": "Mad-Assembler/examples/command_line.asm",
+      "output": "out.obx",
+      "expect_stage": "assemble-source"
+    },
+    {
+      "id": "compression-doynamite-test",
+      "source": "Mad-Assembler/examples/compression/doynamite/test.asm",
+      "output": "out.obx",
+      "expect_stage": "assemble-source"
+    },
+    {
       "id": "detect-cpu",
       "source": "Mad-Assembler/examples/detect_cpu.asm",
-      "cwd": "Mad-Assembler/examples",
-      "output": "detect_cpu.obx",
+      "output": "out.obx",
+      "expect_stage": "assemble-source"
+    },
+    {
+      "id": "detect-cpu-2",
+      "source": "Mad-Assembler/examples/detect_cpu_2.asm",
+      "output": "out.obx",
       "expect_stage": "assemble-source"
     },
     {
       "id": "detect-memory",
       "source": "Mad-Assembler/examples/detect_memory.asm",
-      "cwd": "Mad-Assembler/examples",
-      "output": "detect_memory.obx",
+      "output": "out.obx",
+      "expect_stage": "assemble-source"
+    },
+    {
+      "id": "games-war-room-warroom",
+      "source": "Mad-Assembler/examples/games/war_room/WarRoom.asm",
+      "output": "out.obx",
+      "expect_stage": "assemble-source"
+    },
+    {
+      "id": "graphics-max-viewer-max-viewer",
+      "source": "Mad-Assembler/examples/graphics/max_viewer/max_viewer.asm",
+      "output": "out.obx",
+      "expect_stage": "assemble-source"
+    },
+    {
+      "id": "graphics-rip2max-rip2max",
+      "source": "Mad-Assembler/examples/graphics/rip2max/rip2max.asm",
+      "output": "out.obx",
+      "expect_stage": "assemble-source"
+    },
+    {
+      "id": "graphics-visage-visage",
+      "source": "Mad-Assembler/examples/graphics/visage/visage.asm",
+      "output": "out.obx",
+      "expect_stage": "assemble-source"
+    },
+    {
+      "id": "hang-mads",
+      "source": "Mad-Assembler/examples/hang_mads.asm",
+      "output": "out.obx",
+      "expect_stage": "assemble-source"
+    },
+    {
+      "id": "hex",
+      "source": "Mad-Assembler/examples/hex.asm",
+      "output": "out.obx",
+      "expect_stage": "assemble-source"
+    },
+    {
+      "id": "infinite-loop",
+      "source": "Mad-Assembler/examples/infinite_loop.asm",
+      "output": "out.obx",
+      "expect_stage": "assemble-source"
+    },
+    {
+      "id": "mem-test",
+      "source": "Mad-Assembler/examples/mem_test.asm",
+      "output": "out.obx",
+      "expect_stage": "assemble-source"
+    },
+    {
+      "id": "piramida",
+      "source": "Mad-Assembler/examples/piramida.asm",
+      "output": "out.obx",
+      "expect_stage": "assemble-source"
+    },
+    {
+      "id": "players-sam-test",
+      "source": "Mad-Assembler/examples/players/sam/test.asm",
+      "output": "out.obx",
+      "expect_stage": "assemble-source"
+    },
+    {
+      "id": "players-sap-r-lzss-play-test-stereo",
+      "source": "Mad-Assembler/examples/players/sap-r_lzss/play_test_stereo.asm",
+      "output": "out.obx",
+      "expect_stage": "assemble-source"
+    },
+    {
+      "id": "proc-rekurencja",
+      "source": "Mad-Assembler/examples/proc_rekurencja.asm",
+      "output": "out.obx",
       "expect_stage": "assemble-source"
     },
     {
       "id": "sieve",
       "source": "Mad-Assembler/examples/sieve.asm",
-      "cwd": "Mad-Assembler/examples",
-      "output": "sieve.obx",
+      "output": "out.obx",
+      "expect_stage": "assemble-source"
+    },
+    {
+      "id": "sieve-fast",
+      "source": "Mad-Assembler/examples/sieve_fast.asm",
+      "output": "out.obx",
+      "expect_stage": "assemble-source"
+    },
+    {
+      "id": "sprites-bitmap-sprite-test",
+      "source": "Mad-Assembler/examples/sprites/bitmap/sprite_test.asm",
+      "output": "out.obx",
       "expect_stage": "assemble-source"
     },
     {
       "id": "stereo-detect",
       "source": "Mad-Assembler/examples/stereo_detect.asm",
-      "cwd": "Mad-Assembler/examples",
-      "output": "stereo_detect.obx",
+      "output": "out.obx",
+      "expect_stage": "assemble-source"
+    },
+    {
+      "id": "tetris-reloc-example",
+      "source": "Mad-Assembler/examples/tetris_reloc_example.asm",
+      "output": "out.obx",
       "expect_stage": "assemble-source"
     },
     {
       "id": "xms-banks",
       "source": "Mad-Assembler/examples/xms_banks.asm",
-      "cwd": "Mad-Assembler/examples",
-      "output": "xms_banks.obx",
+      "output": "out.obx",
       "expect_stage": "assemble-source"
     }
   ]
