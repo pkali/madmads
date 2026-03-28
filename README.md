@@ -72,6 +72,23 @@ scripts/ca65-probe.sh 800
 scripts/ca65-probe.sh 5200
 ```
 
+Run the config-driven example regression seed set:
+
+```sh
+/home/pirx/projects/madmads/.venv/bin/python scripts/mads-examples.py --list
+/home/pirx/projects/madmads/.venv/bin/python scripts/mads-examples.py
+```
+
+The seed config lives in `scripts/mads-examples.json` and is grouped into three
+categories:
+
+- `asmout-roundtrip`: source assembles, asmout reassembles, and bytes must match.
+- `assemble-only`: source must assemble, but asmout is not yet part of the check.
+- `known-failing`: checked examples that are expected to fail today, either due to
+    Linux path issues or known asmout gaps.
+
+Each entry can also set its own working directory and extra MADS arguments.
+
 ## Working goal
 
 Extend MADS so it can emit not only binary output, but also a second output format: a plain 6502 assembly listing that represents the fully expanded program after macros, expressions, includes, and most MADS-specific conveniences have already been resolved.

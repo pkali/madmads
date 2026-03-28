@@ -1,0 +1,151 @@
+{
+  "asmout-roundtrip": [
+    {
+      "id": "asmout-data-smoke",
+      "source": "Mad-Assembler/examples/asmout_data_smoke.asm",
+      "cwd": "Mad-Assembler/examples",
+      "output": "asmout_data_smoke.obx"
+    },
+    {
+      "id": "boot",
+      "source": "Mad-Assembler/examples/Boot.asm",
+      "cwd": "Mad-Assembler/examples",
+      "output": "Boot.obx"
+    },
+    {
+      "id": "test6502",
+      "source": "Mad-Assembler/examples/test6502.asm",
+      "cwd": "Mad-Assembler/examples",
+      "output": "test6502.obx"
+    },
+    {
+      "id": "if-else",
+      "source": "Mad-Assembler/examples/if_else.asm",
+      "cwd": "Mad-Assembler/examples",
+      "output": "if_else.obx"
+    },
+    {
+      "id": "sound",
+      "source": "Mad-Assembler/examples/sound.asm",
+      "cwd": "Mad-Assembler/examples",
+      "output": "sound.obx"
+    },
+    {
+      "id": "hscroll",
+      "source": "Mad-Assembler/examples/hscroll.asm",
+      "cwd": "Mad-Assembler/examples",
+      "output": "hscroll.obx"
+    },
+    {
+      "id": "file-loader",
+      "source": "Mad-Assembler/examples/file_loader.asm",
+      "cwd": "Mad-Assembler/examples",
+      "output": "file_loader.obx"
+    },
+    {
+      "id": "plotter",
+      "source": "Mad-Assembler/examples/plotter.asm",
+      "cwd": "Mad-Assembler/examples",
+      "output": "plotter.obx"
+    },
+    {
+      "id": "tetris",
+      "source": "Mad-Assembler/examples/tetris.asm",
+      "cwd": "Mad-Assembler/examples",
+      "output": "tetris.obx"
+    }
+  ],
+  "assemble-only": [
+    {
+      "id": "while",
+      "source": "Mad-Assembler/examples/while.asm",
+      "cwd": "Mad-Assembler/examples",
+      "output": "while.obx"
+    },
+    {
+      "id": "hex-reg-var",
+      "source": "Mad-Assembler/examples/hex_reg_var.asm",
+      "cwd": "Mad-Assembler/examples",
+      "output": "hex_reg_var.obx"
+    },
+    {
+      "id": "input-string",
+      "source": "Mad-Assembler/examples/input_string.asm",
+      "cwd": "Mad-Assembler/examples",
+      "output": "input_string.obx"
+    },
+    {
+      "id": "local",
+      "source": "Mad-Assembler/examples/local.asm",
+      "cwd": "Mad-Assembler/examples",
+      "output": "local.obx"
+    },
+    {
+      "id": "local-2",
+      "source": "Mad-Assembler/examples/local_2.asm",
+      "cwd": "Mad-Assembler/examples",
+      "output": "local_2.obx"
+    },
+    {
+      "id": "local-add",
+      "source": "Mad-Assembler/examples/local_add.asm",
+      "cwd": "Mad-Assembler/examples",
+      "output": "local_add.obx"
+    },
+    {
+      "id": "local-global",
+      "source": "Mad-Assembler/examples/local_global.asm",
+      "cwd": "Mad-Assembler/examples",
+      "output": "local_global.obx"
+    },
+    {
+      "id": "macro",
+      "source": "Mad-Assembler/examples/macro.asm",
+      "cwd": "Mad-Assembler/examples",
+      "output": "macro.obx"
+    },
+    {
+      "id": "macro-proc-local",
+      "source": "Mad-Assembler/examples/macro_proc_local.asm",
+      "cwd": "Mad-Assembler/examples",
+      "output": "macro_proc_local.obx"
+    }
+  ],
+  "known-failing": [
+    {
+      "id": "detect-cpu",
+      "source": "Mad-Assembler/examples/detect_cpu.asm",
+      "cwd": "Mad-Assembler/examples",
+      "output": "detect_cpu.obx",
+      "expect_stage": "assemble-source"
+    },
+    {
+      "id": "detect-memory",
+      "source": "Mad-Assembler/examples/detect_memory.asm",
+      "cwd": "Mad-Assembler/examples",
+      "output": "detect_memory.obx",
+      "expect_stage": "assemble-source"
+    },
+    {
+      "id": "sieve",
+      "source": "Mad-Assembler/examples/sieve.asm",
+      "cwd": "Mad-Assembler/examples",
+      "output": "sieve.obx",
+      "expect_stage": "assemble-source"
+    },
+    {
+      "id": "stereo-detect",
+      "source": "Mad-Assembler/examples/stereo_detect.asm",
+      "cwd": "Mad-Assembler/examples",
+      "output": "stereo_detect.obx",
+      "expect_stage": "assemble-source"
+    },
+    {
+      "id": "xms-banks",
+      "source": "Mad-Assembler/examples/xms_banks.asm",
+      "cwd": "Mad-Assembler/examples",
+      "output": "xms_banks.obx",
+      "expect_stage": "assemble-source"
+    }
+  ]
+}
