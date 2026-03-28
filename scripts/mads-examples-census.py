@@ -76,8 +76,30 @@ class CensusResult:
     first_error: str | None
 
 
+@dataclass(frozen=True)
+class ExampleFileIndex:
+    lower_paths: dict[str, Path]
+    by_name: dict[str, list[Path]]
+    by_stem: dict[str, list[Path]]
+
+
 def normalize_name(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", "", text.lower())
+
+
+def build_file_index(examples_root: Path) -> ExampleFileIndex:
+    lower_paths: dict[str, Path] = {}
+    by_name: dict[str, list[Path]] = {}
+    by_stem: dict[str, list[Path]] = {}
+
+    for path in examples_root.rglob("*"):
+        if not path.is_file():
+            continue
+        lower_paths[path.as_posix().lower()] = path
+        by_name.setdefault(path.name.lower(), []).append(path)
+        by_stem.setdefault(path.stem.lower(), []).append(path)
+
+    return ExampleFileIndex(lower_paths=lower_paths, by_name=by_name, by_stem=by_stem)
 
 
 def parse_args() -> argparse.Namespace:
@@ -177,7 +199,7 @@ def looks_like_entrypoint(relative_source: str) -> bool:
     return any(token in stem for token in ENTRYPOINT_SUBSTRINGS)
 
 
-def should_include_in_config(result: CensusResult) -> bool:
+def should_include_in_config(result: CensusResult, repo_root: Path, file_index: ExampleFileIndex) -> bool:
     if is_ignored_subtree(result.relative_source):
         return False
 
@@ -187,10 +209,17 @@ def should_include_in_config(result: CensusResult) -> bool:
     if result.first_error and "No ORG specified" in result.first_error:
         return False
 
+    if classify_missing_dependency(result, repo_root, file_index) == "missing-files-external-asset":
+        return False
+
     return True
 
 
-def failure_bucket(result: CensusResult) -> str:
+def failure_bucket(result: CensusResult, repo_root: Path, file_index: ExampleFileIndex) -> str:
+    missing_bucket = classify_missing_dependency(result, repo_root, file_index)
+    if missing_bucket is not None:
+        return missing_bucket
+
     error = result.first_error or ""
     for bucket, needle in FAILURE_BUCKET_RULES:
         if needle in error:
@@ -198,13 +227,15 @@ def failure_bucket(result: CensusResult) -> str:
     return "other"
 
 
-def summarize_batches(results: list[CensusResult]) -> str:
-    included_failures = [result for result in results if not result.success and should_include_in_config(result)]
+def summarize_batches(results: list[CensusResult], repo_root: Path, file_index: ExampleFileIndex) -> str:
+    included_failures = [
+        result for result in results if not result.success and should_include_in_config(result, repo_root, file_index)
+    ]
     by_bucket: dict[str, list[CensusResult]] = {}
     by_prefix: dict[str, list[CensusResult]] = {}
 
     for result in included_failures:
-        bucket = failure_bucket(result)
+        bucket = failure_bucket(result, repo_root, file_index)
         by_bucket.setdefault(bucket, []).append(result)
 
         example_path = relative_example_path(result.relative_source)
@@ -260,6 +291,44 @@ def first_error_line(text: str) -> str | None:
     return None
 
 
+def extract_missing_reference(first_error: str | None) -> str | None:
+    if not first_error:
+        return None
+
+    match = re.search(r"Cannot open or create file '([^']*)", first_error)
+    if match is None:
+        return None
+
+    return match.group(1)
+
+
+def classify_missing_dependency(result: CensusResult, repo_root: Path, file_index: ExampleFileIndex) -> str | None:
+    missing_reference = extract_missing_reference(result.first_error)
+    if missing_reference is None:
+        return None
+
+    source_dir = (repo_root / result.relative_source).parent
+    candidate_path = (source_dir / missing_reference).resolve()
+    candidate_lower = candidate_path.as_posix().lower()
+    if candidate_lower in file_index.lower_paths:
+        if file_index.lower_paths[candidate_lower] == candidate_path:
+            return "missing-files-exact"
+        return "missing-files-case-mismatch"
+
+    name_matches = file_index.by_name.get(Path(missing_reference).name.lower(), [])
+    if name_matches:
+        return "missing-files-path-mismatch"
+
+    stem_matches = file_index.by_stem.get(Path(missing_reference).stem.lower(), [])
+    if stem_matches:
+        return "missing-files-generated-or-alt-ext"
+
+    if Path(missing_reference).suffix.lower() in {".raw", ".fnt", ".xex", ".pic"}:
+        return "missing-files-external-asset"
+
+    return "missing-files-internal"
+
+
 def run_probe(repo_root: Path, mads_bin: Path, source_file: Path, artifact_dir: Path) -> CensusResult:
     artifact_dir.mkdir(parents=True, exist_ok=True)
     log_path = artifact_dir / "build.log"
@@ -283,13 +352,18 @@ def run_probe(repo_root: Path, mads_bin: Path, source_file: Path, artifact_dir: 
     )
 
 
-def build_suggested_config(existing_config: dict[str, Any], census_results: list[CensusResult]) -> dict[str, Any]:
+def build_suggested_config(
+    existing_config: dict[str, Any],
+    census_results: list[CensusResult],
+    repo_root: Path,
+    file_index: ExampleFileIndex,
+) -> dict[str, Any]:
     asmout_roundtrip = list(existing_config.get("asmout-roundtrip", []))
 
     assemble_only: list[dict[str, Any]] = []
     known_failing: list[dict[str, Any]] = []
     for result in census_results:
-        if not should_include_in_config(result):
+        if not should_include_in_config(result, repo_root, file_index):
             continue
 
         entry = {
@@ -344,6 +418,7 @@ def main() -> int:
         unique_sources.append(source_file)
 
     census_results: list[CensusResult] = []
+    file_index = build_file_index(examples_root)
     for source_file in unique_sources:
         relative_to_repo = source_file.relative_to(repo_root).as_posix()
         if relative_to_repo in preserved_roundtrip:
@@ -355,7 +430,7 @@ def main() -> int:
         status = "OK" if result.success else "FAIL"
         print(f"{status}\t{result.relative_source}\t{result.first_error or ''}")
 
-    suggested_config = build_suggested_config(existing_config, census_results)
+    suggested_config = build_suggested_config(existing_config, census_results, repo_root, file_index)
     summary = {
         "total_probed": len(census_results),
         "assemble_only": sum(1 for result in census_results if result.success),
@@ -363,7 +438,7 @@ def main() -> int:
         "included_assemble_only": len(suggested_config["assemble-only"]),
         "included_known_failing": len(suggested_config["known-failing"]),
     }
-    review_batches = summarize_batches(census_results)
+    review_batches = summarize_batches(census_results, repo_root, file_index)
 
     (artifact_root / "results.json").write_text(
         json.dumps(

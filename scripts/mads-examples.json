@@ -579,12 +579,6 @@
       "expect_stage": "assemble-source"
     },
     {
-      "id": "games-war-room-warroom",
-      "source": "Mad-Assembler/examples/games/war_room/WarRoom.asm",
-      "output": "out.obx",
-      "expect_stage": "assemble-source"
-    },
-    {
       "id": "graphics-max-viewer-max-viewer",
       "source": "Mad-Assembler/examples/graphics/max_viewer/max_viewer.asm",
       "output": "out.obx",
